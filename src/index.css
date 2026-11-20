@@ -1,0 +1,1416 @@
+@import "tailwindcss";
+
+@theme {
+  --font-spooky: "Silkscreen", "Baloo 2", sans-serif;
+  --font-winter: "Silkscreen", "Baloo 2", sans-serif;
+  --font-pixel: "Silkscreen", monospace;
+  --font-display: "Silkscreen", "Baloo 2", "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-deep: var(--surface-deep);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-lime: var(--lime);
+  --color-lime-foreground: var(--lime-foreground);
+  --color-rose: var(--rose);
+  --color-rose-foreground: var(--rose-foreground);
+  --color-sky: var(--sky);
+  --color-sky-foreground: var(--sky-foreground);
+  --color-gold: var(--gold);
+  --color-silver: var(--silver);
+  --color-bronze: var(--bronze);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  /* Official WonderMC Winter Frost palette */
+  --night-950: #030814;
+  --night-900: #071224;
+  --night-800: #0c1c38;
+  --night-700: #142a50;
+  --frost-cyan: #38bdf8;
+  --frost-ice: #e0f2fe;
+  --frost-blue: #0284c7;
+  --frost-bright: #67e8f9;
+  --aurora-teal: #06b6d4;
+  --aurora-emerald: #10b981;
+  --aurora-purple: #818cf8;
+  --frost-gold: #fde68a;
+  --slime: #38bdf8;
+  --bone: #f0f9ff;
+  --ink: #01040a;
+
+  --background: #01040a;
+  --foreground: #f0f9ff;
+  --surface: rgba(15, 35, 65, 0.95);
+  --surface-deep: #030814;
+  --card: rgba(22, 48, 88, 0.92);
+  --card-foreground: #e0f2fe;
+  --popover: #071224;
+  --popover-foreground: #f0f9ff;
+  --primary: #38bdf8;
+  --primary-foreground: #01040a;
+  --secondary: #2563eb;
+  --secondary-foreground: #ffffff;
+  --muted: rgba(56, 189, 248, 0.12);
+  --muted-foreground: #93c5fd;
+  --accent: #38bdf8;
+  --accent-2: #818cf8;
+  --accent-foreground: #01040a;
+  --destructive: #f43f5e;
+  --destructive-foreground: #ffffff;
+  --border: rgba(56, 189, 248, 0.32);
+  --border-strong: rgba(125, 211, 252, 0.75);
+  --input: rgba(7, 18, 36, 0.95);
+  --ring: #38bdf8;
+  --brand: #38bdf8;
+  --lime: #34d399;
+  --lime-foreground: #01040a;
+  --rose: #fb7185;
+  --rose-foreground: #ffffff;
+  --sky: #38bdf8;
+  --sky-foreground: #01040a;
+  --gold: #fde68a;
+  --silver: #cbd5e1;
+  --bronze: #93c5fd;
+  --success: #34d399;
+  --success-foreground: #01040a;
+
+  /* Categories gradients & glows: Crisp Winter & Ice Themes */
+  --cat-1: linear-gradient(135deg, #0284c7 0%, #0ea5e9 50%, #38bdf8 100%);
+  --cat-2: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #818cf8 100%);
+  --cat-3: linear-gradient(135deg, #047857 0%, #059669 50%, #10b981 100%);
+  --cat-4: linear-gradient(135deg, #b91c1c 0%, #e11d48 50%, #f43f5e 100%);
+  --cat-5: linear-gradient(135deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%);
+  --cat-6: linear-gradient(135deg, #b45309 0%, #d97706 50%, #fbbf24 100%);
+
+  --cat-glow-1: rgba(56, 189, 248, 0.55);
+  --cat-glow-2: rgba(129, 140, 248, 0.55);
+  --cat-glow-3: rgba(52, 211, 153, 0.55);
+  --cat-glow-4: rgba(244, 63, 94, 0.55);
+  --cat-glow-5: rgba(6, 182, 212, 0.55);
+  --cat-glow-6: rgba(251, 191, 36, 0.55);
+
+  --theme-banner-border: #0f274a;
+  --theme-banner-shadow: #0284c7;
+  --theme-banner-glow: rgba(56, 189, 248, 0.38);
+  --theme-panel-outline: rgba(56, 189, 248, 0.35);
+  --theme-panel-bg: linear-gradient(180deg, rgba(20, 42, 80, 0.78), rgba(7, 18, 36, 0.88));
+}
+
+/* Christmas Holiday Theme Overrides */
+[data-store-theme="christmas"] {
+  --night-950: #130406;
+  --night-900: #1e080c;
+  --night-800: #0e2419;
+  --night-700: #173828;
+  --background: #0d0305;
+  --foreground: #fffaf0;
+  --surface: rgba(34, 13, 18, 0.92);
+  --surface-deep: #17060a;
+  --card: rgba(44, 17, 22, 0.92);
+  --card-foreground: #fef3c7;
+  --popover: #1e080c;
+  --popover-foreground: #fffaf0;
+  --primary: #dc2626;
+  --primary-foreground: #ffffff;
+  --secondary: #15803d;
+  --secondary-foreground: #ffffff;
+  --muted: rgba(220, 38, 38, 0.16);
+  --muted-foreground: #fecaca;
+  --accent: #ef4444;
+  --accent-2: #16a34a;
+  --accent-foreground: #ffffff;
+  --border: rgba(248, 113, 113, 0.36);
+  --border-strong: rgba(251, 191, 36, 0.78);
+  --ring: #ef4444;
+  --brand: #ef4444;
+  --gold: #fde047;
+  --lime: #22c55e;
+  --lime-foreground: #052e16;
+  --sky: #ef4444;
+  --sky-foreground: #ffffff;
+  --theme-banner-border: #7f1d1d;
+  --theme-banner-shadow: #15803d;
+  --theme-banner-glow: rgba(239, 68, 68, 0.42);
+  --theme-panel-outline: rgba(251, 191, 36, 0.36);
+  --theme-panel-bg: linear-gradient(180deg, rgba(46, 15, 20, 0.88), rgba(14, 34, 24, 0.92));
+}
+
+/* New Year 2027 Celebration Theme Overrides (Black, Gold & Purple) */
+[data-store-theme="newyear2027"] {
+  --night-950: #05030a;
+  --night-900: #0b0618;
+  --night-800: #160c30;
+  --night-700: #24134d;
+  --background: #040208;
+  --foreground: #fefce8;
+  --surface: rgba(16, 10, 32, 0.93);
+  --surface-deep: #080514;
+  --card: rgba(24, 15, 48, 0.93);
+  --card-foreground: #fef9c3;
+  --popover: #0d0820;
+  --popover-foreground: #fefce8;
+  --primary: #f59e0b;
+  --primary-foreground: #090617;
+  --secondary: #7c3aed;
+  --secondary-foreground: #ffffff;
+  --muted: rgba(245, 158, 11, 0.14);
+  --muted-foreground: #e9d5ff;
+  --accent: #f59e0b;
+  --accent-2: #9333ea;
+  --accent-foreground: #090617;
+  --border: rgba(251, 191, 36, 0.36);
+  --border-strong: rgba(253, 224, 71, 0.85);
+  --ring: #f59e0b;
+  --brand: #fbbf24;
+  --gold: #fde047;
+  --lime: #f59e0b;
+  --lime-foreground: #090617;
+  --sky: #9333ea;
+  --sky-foreground: #ffffff;
+  --theme-banner-border: #78350f;
+  --theme-banner-shadow: #9333ea;
+  --theme-banner-glow: rgba(245, 158, 11, 0.45);
+  --theme-panel-outline: rgba(251, 191, 36, 0.38);
+  --theme-panel-bg: linear-gradient(180deg, rgba(22, 13, 46, 0.9), rgba(8, 5, 18, 0.95));
+}
+
+/* Default Theme Overrides */
+[data-store-theme="default"] {
+  --night-950: #030814;
+  --night-900: #071224;
+  --night-800: #0c1c38;
+  --night-700: #142a50;
+  --background: #01040a;
+  --foreground: #f0f9ff;
+  --surface: rgba(15, 35, 65, 0.95);
+  --surface-deep: #030814;
+  --card: rgba(22, 48, 88, 0.92);
+  --card-foreground: #e0f2fe;
+  --primary: #38bdf8;
+  --primary-foreground: #01040a;
+  --secondary: #0284c7;
+  --secondary-foreground: #ffffff;
+  --accent: #38bdf8;
+  --accent-2: #818cf8;
+  --accent-foreground: #01040a;
+  --border: rgba(56, 189, 248, 0.32);
+  --border-strong: rgba(125, 211, 252, 0.75);
+  --ring: #38bdf8;
+  --brand: #38bdf8;
+  --theme-banner-border: #0f274a;
+  --theme-banner-shadow: #0284c7;
+  --theme-banner-glow: rgba(56, 189, 248, 0.38);
+  --theme-panel-outline: rgba(56, 189, 248, 0.35);
+  --theme-panel-bg: linear-gradient(180deg, rgba(20, 42, 80, 0.78), rgba(7, 18, 36, 0.88));
+}
+
+/* Ramadan Kareem Theme Overrides (Dark Emerald Green & Radiant Gold) */
+[data-store-theme="ramadan"] {
+  --night-950: #02120b;
+  --night-900: #041c12;
+  --night-800: #06281b;
+  --night-700: #0a3b28;
+  --background: #020f09;
+  --foreground: #fefce8;
+  --surface: rgba(6, 32, 22, 0.94);
+  --surface-deep: #03140c;
+  --card: rgba(9, 44, 30, 0.94);
+  --card-foreground: #fef9c3;
+  --popover: #041c12;
+  --popover-foreground: #fefce8;
+  --primary: #10b981;
+  --primary-foreground: #02120b;
+  --secondary: #fbbf24;
+  --secondary-foreground: #02120b;
+  --muted: rgba(16, 185, 129, 0.16);
+  --muted-foreground: #a7f3d0;
+  --accent: #fbbf24;
+  --accent-2: #10b981;
+  --accent-foreground: #02120b;
+  --border: rgba(16, 185, 129, 0.36);
+  --border-strong: rgba(251, 191, 36, 0.85);
+  --ring: #10b981;
+  --brand: #10b981;
+  --gold: #fbbf24;
+  --lime: #10b981;
+  --lime-foreground: #02120b;
+  --sky: #34d399;
+  --sky-foreground: #02120b;
+  --theme-banner-border: #065f46;
+  --theme-banner-shadow: #d97706;
+  --theme-banner-glow: rgba(251, 191, 36, 0.45);
+  --theme-panel-outline: rgba(251, 191, 36, 0.4);
+  --theme-panel-bg: linear-gradient(180deg, rgba(8, 42, 28, 0.92), rgba(3, 20, 12, 0.96));
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.gaming-background {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(6, 182, 212, 0.20), transparent 50%),
+    radial-gradient(circle at 80% 15%, rgba(129, 140, 248, 0.22), transparent 45%),
+    radial-gradient(circle at 15% 85%, rgba(14, 165, 233, 0.16), transparent 50%),
+    linear-gradient(180deg, var(--night-950) 0%, var(--night-900) 40%, var(--night-800) 100%);
+  overflow-x: clip;
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  transition: background-color 0.4s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Crystalline Arctic Moon in Top-Right Sky */
+.gaming-background::after {
+  content: "";
+  position: absolute;
+  top: 2rem;
+  right: 5vw;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 38%, rgba(200, 230, 255, 0.55) 0 9%, transparent 10%),
+    radial-gradient(circle at 65% 65%, rgba(180, 215, 245, 0.45) 0 12%, transparent 13%),
+    radial-gradient(circle at 40% 40%, #ffffff, #dbeafe 75%);
+  box-shadow: 0 0 50px 15px rgba(186, 230, 253, 0.35), 0 0 120px 45px rgba(56, 189, 248, 0.22);
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.95;
+}
+
+/* Ice pixel grid overlay + frosted mist */
+.gaming-background::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(56, 189, 248, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+  z-index: -1;
+}
+
+.gaming-background[data-store-theme="christmas"] {
+  background:
+    radial-gradient(circle at 20% 10%, rgba(220, 38, 38, 0.24), transparent 50%),
+    radial-gradient(circle at 82% 18%, rgba(22, 163, 74, 0.24), transparent 48%),
+    radial-gradient(circle at 50% 85%, rgba(245, 158, 11, 0.14), transparent 55%),
+    linear-gradient(180deg, #140407 0%, #22080d 45%, #0d2118 100%);
+}
+
+.gaming-background[data-store-theme="christmas"]::before {
+  background-image:
+    linear-gradient(rgba(248, 113, 113, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74, 222, 128, 0.08) 1px, transparent 1px);
+}
+
+.gaming-background[data-store-theme="newyear2027"] {
+  background:
+    radial-gradient(circle at 50% 5%, rgba(245, 158, 11, 0.22), transparent 50%),
+    radial-gradient(circle at 80% 25%, rgba(147, 51, 234, 0.25), transparent 45%),
+    radial-gradient(circle at 18% 82%, rgba(251, 191, 36, 0.14), transparent 50%),
+    linear-gradient(180deg, #05030a 0%, #0b0618 45%, #160c30 100%);
+}
+
+.gaming-background[data-store-theme="newyear2027"]::before {
+  background-image:
+    linear-gradient(rgba(251, 191, 36, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(168, 85, 247, 0.08) 1px, transparent 1px);
+}
+
+.gaming-background[data-store-theme="christmas"]::after {
+  background:
+    radial-gradient(circle at 40% 40%, #fffbeb, #fde68a 75%);
+  box-shadow: 0 0 50px 15px rgba(251, 191, 36, 0.35), 0 0 120px 45px rgba(220, 38, 38, 0.22);
+}
+
+.gaming-background[data-store-theme="newyear2027"]::after {
+  background:
+    radial-gradient(circle at 40% 40%, #fef08a, #f59e0b 75%);
+  box-shadow: 0 0 50px 15px rgba(245, 158, 11, 0.42), 0 0 120px 45px rgba(147, 51, 234, 0.3);
+}
+
+.gaming-background[data-store-theme="ramadan"] {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.22), transparent 50%),
+    radial-gradient(circle at 80% 18%, rgba(251, 191, 36, 0.22), transparent 45%),
+    radial-gradient(circle at 18% 85%, rgba(5, 150, 105, 0.18), transparent 50%),
+    linear-gradient(180deg, #02120b 0%, #041c12 40%, #06281b 100%);
+}
+
+.gaming-background[data-store-theme="ramadan"]::before {
+  background-image:
+    radial-gradient(circle, rgba(251, 191, 36, 0.12) 1.5px, transparent 1.5px),
+    linear-gradient(rgba(16, 185, 129, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.08) 1px, transparent 1px);
+  background-size: 36px 36px, 36px 36px, 36px 36px;
+}
+
+.gaming-background[data-store-theme="ramadan"]::after {
+  content: "🌙";
+  position: absolute;
+  top: 2rem;
+  right: 5vw;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 54px;
+  background: radial-gradient(circle at 40% 40%, rgba(253, 224, 71, 0.2), rgba(245, 158, 11, 0.08) 60%, transparent 75%);
+  box-shadow: 0 0 50px 20px rgba(251, 191, 36, 0.45), 0 0 110px 40px rgba(16, 185, 129, 0.25);
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.95;
+  animation: ramadan-crescent-float 6s ease-in-out infinite alternate;
+}
+
+/* WonderMC Banner Styling (Theme-Aware) */
+.wondermc-banner {
+  display: block;
+  width: 100%;
+  max-width: 980px;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 22px;
+  border: 3px solid var(--theme-banner-border);
+  box-shadow:
+    0 10px 0 var(--theme-banner-shadow),
+    0 0 0 2px var(--border),
+    0 0 50px var(--theme-banner-glow),
+    0 30px 60px -20px rgba(0, 0, 0, 0.85);
+  animation: wondermc-bob 5s ease-in-out infinite;
+}
+
+@keyframes wondermc-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.winter-brand, .spooky-brand {
+  font-family: "Silkscreen", "Baloo 2", sans-serif;
+  font-weight: 700;
+  color: var(--foreground);
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 20px var(--theme-banner-glow), 0 2px 0 #01040a;
+}
+
+.winter-tagline, .spooky-tagline {
+  font-family: "Silkscreen", "Outfit", monospace, sans-serif;
+  color: var(--accent);
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 16px var(--theme-banner-glow), 0 2px 0 #01040a;
+  animation: winter-flicker 6s infinite;
+}
+
+@keyframes winter-flicker {
+  0%, 18%, 22%, 62%, 64%, 100% { opacity: 1; }
+  20%, 63% { opacity: 0.75; }
+}
+
+.winter-badge, .spooky-badge {
+  display: inline-block;
+  padding: 0.45rem 1rem;
+  font-family: "Silkscreen", monospace;
+  font-size: 0.85rem;
+  color: var(--foreground);
+  background: var(--muted);
+  border: 2px dashed var(--border-strong);
+  border-radius: 999px;
+  text-shadow: 0 0 10px var(--theme-banner-glow);
+}
+
+/* Theme Glass Panel Style */
+.frost-panel, .spooky-panel {
+  background: var(--theme-panel-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 3px solid var(--ink);
+  outline: 2px solid var(--theme-panel-outline);
+  outline-offset: -6px;
+  box-shadow: 0 7px 0 var(--theme-banner-shadow);
+  transition: background 0.35s ease, border-color 0.35s ease, outline-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+.shadow-panel {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 0 var(--night-700), 0 20px 40px -20px rgba(0, 0, 0, 0.85);
+  border: 3px solid var(--ink);
+  outline: 2px solid var(--theme-panel-outline);
+  outline-offset: -6px;
+  transition: background-color 0.35s ease, border-color 0.35s ease, outline-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+.gaming-particles {
+  z-index: -10;
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.halloween-particle {
+  position: absolute;
+  bottom: -60px;
+  user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 0 10px rgba(255, 119, 0, 0.45));
+  animation: halloween-rise linear infinite;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+@keyframes halloween-rise {
+  0% {
+    transform: translateY(0) rotate(var(--init-rot, 0deg)) scale(0.75);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.65;
+    transform: translateY(-20vh) rotate(calc(var(--init-rot, 0deg) + 30deg)) scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: translateY(-60vh) rotate(calc(var(--init-rot, 0deg) + 90deg)) scale(1.08);
+  }
+  85% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateY(-135vh) rotate(calc(var(--init-rot, 0deg) + 210deg)) scale(0.9);
+    opacity: 0;
+  }
+}
+
+/* Category tiles */
+.cat-tile {
+  color: oklch(99% 0 0);
+  border-color: oklch(100% 0 0 / 0.25);
+  transition-property: transform, box-shadow, filter, border-color;
+  transition-duration: 0.3s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 8px 24px -12px oklch(0% 0 0 / 0.6);
+}
+
+.cat-tile .cat-desc {
+  color: oklch(100% 0 0 / 0.82);
+}
+
+.cat-tile:hover {
+  filter: saturate(1.15) brightness(1.06);
+}
+
+.cat-tile-1 { background-image: var(--cat-1); }
+.cat-tile-2 { background-image: var(--cat-2); }
+.cat-tile-3 { background-image: var(--cat-3); }
+.cat-tile-4 { background-image: var(--cat-4); }
+.cat-tile-5 { background-image: var(--cat-5); }
+.cat-tile-6 { background-image: var(--cat-6); }
+
+/* Category Theme 1: Winter */
+.cat-theme-winter {
+  --cat-1: linear-gradient(135deg, #0284c7 0%, #0ea5e9 50%, #38bdf8 100%);
+  --cat-2: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #818cf8 100%);
+  --cat-3: linear-gradient(135deg, #0e7490 0%, #06b6d4 50%, #22d3ee 100%);
+  --cat-4: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 50%, #60a5fa 100%);
+  --cat-5: linear-gradient(135deg, #0f766e 0%, #14b8a6 50%, #2dd4bf 100%);
+  --cat-6: linear-gradient(135deg, #334155 0%, #475569 50%, #94a3b8 100%);
+  --cat-glow-1: rgba(56, 189, 248, 0.55);
+  --cat-glow-2: rgba(129, 140, 248, 0.55);
+  --cat-glow-3: rgba(34, 211, 238, 0.55);
+  --cat-glow-4: rgba(96, 165, 250, 0.55);
+  --cat-glow-5: rgba(45, 212, 191, 0.55);
+  --cat-glow-6: rgba(148, 163, 184, 0.55);
+}
+
+/* Category Theme 2: Christmas */
+.cat-theme-christmas {
+  --cat-1: linear-gradient(135deg, #991b1b 0%, #dc2626 50%, #ef4444 100%);
+  --cat-2: linear-gradient(135deg, #14532d 0%, #15803d 50%, #22c55e 100%);
+  --cat-3: linear-gradient(135deg, #b45309 0%, #d97706 50%, #f59e0b 100%);
+  --cat-4: linear-gradient(135deg, #881337 0%, #be123c 50%, #f43f5e 100%);
+  --cat-5: linear-gradient(135deg, #065f46 0%, #059669 50%, #34d399 100%);
+  --cat-6: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 50%, #eab308 100%);
+  --cat-glow-1: rgba(239, 68, 68, 0.55);
+  --cat-glow-2: rgba(34, 197, 94, 0.55);
+  --cat-glow-3: rgba(245, 158, 11, 0.55);
+  --cat-glow-4: rgba(244, 63, 94, 0.55);
+  --cat-glow-5: rgba(52, 211, 153, 0.55);
+  --cat-glow-6: rgba(234, 179, 8, 0.55);
+}
+
+/* Category Theme 3: New Year 2027 */
+.cat-theme-newyear2027 {
+  --cat-1: linear-gradient(135deg, #92400e 0%, #d97706 50%, #fbbf24 100%);
+  --cat-2: linear-gradient(135deg, #4c1d95 0%, #7c3aed 50%, #a855f7 100%);
+  --cat-3: linear-gradient(135deg, #86198f 0%, #c026d3 50%, #e879f9 100%);
+  --cat-4: linear-gradient(135deg, #1e1b4b 0%, #3730a3 50%, #6366f1 100%);
+  --cat-5: linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #f59e0b 100%);
+  --cat-6: linear-gradient(135deg, #9f1239 0%, #e11d48 50%, #fbbf24 100%);
+  --cat-glow-1: rgba(251, 191, 36, 0.6);
+  --cat-glow-2: rgba(168, 85, 247, 0.6);
+  --cat-glow-3: rgba(232, 121, 249, 0.55);
+  --cat-glow-4: rgba(99, 102, 241, 0.55);
+  --cat-glow-5: rgba(245, 158, 11, 0.55);
+  --cat-glow-6: rgba(225, 29, 72, 0.55);
+}
+
+/* Category Theme 4: Ramadan */
+.cat-theme-ramadan {
+  --cat-1: linear-gradient(135deg, #064e3b 0%, #047857 50%, #10b981 100%);
+  --cat-2: linear-gradient(135deg, #78350f 0%, #b45309 50%, #f59e0b 100%);
+  --cat-3: linear-gradient(135deg, #065f46 0%, #0d9488 50%, #2dd4bf 100%);
+  --cat-4: linear-gradient(135deg, #854d0e 0%, #ca8a04 50%, #facc15 100%);
+  --cat-5: linear-gradient(135deg, #14532d 0%, #16a34a 50%, #4ade80 100%);
+  --cat-6: linear-gradient(135deg, #0f766e 0%, #0284c7 50%, #38bdf8 100%);
+  --cat-glow-1: rgba(16, 185, 129, 0.6);
+  --cat-glow-2: rgba(245, 158, 11, 0.6);
+  --cat-glow-3: rgba(45, 212, 191, 0.55);
+  --cat-glow-4: rgba(250, 204, 21, 0.6);
+  --cat-glow-5: rgba(74, 222, 128, 0.55);
+  --cat-glow-6: rgba(56, 189, 248, 0.55);
+}
+
+/* Category Theme 5: Default */
+.cat-theme-default {
+  --cat-1: linear-gradient(135deg, #0284c7 0%, #0ea5e9 50%, #38bdf8 100%);
+  --cat-2: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #818cf8 100%);
+  --cat-3: linear-gradient(135deg, #047857 0%, #059669 50%, #10b981 100%);
+  --cat-4: linear-gradient(135deg, #b91c1c 0%, #e11d48 50%, #f43f5e 100%);
+  --cat-5: linear-gradient(135deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%);
+  --cat-6: linear-gradient(135deg, #b45309 0%, #d97706 50%, #fbbf24 100%);
+  --cat-glow-1: rgba(56, 189, 248, 0.55);
+  --cat-glow-2: rgba(129, 140, 248, 0.55);
+  --cat-glow-3: rgba(52, 211, 153, 0.55);
+  --cat-glow-4: rgba(244, 63, 94, 0.55);
+  --cat-glow-5: rgba(6, 182, 212, 0.55);
+  --cat-glow-6: rgba(251, 191, 36, 0.55);
+}
+
+.cat-tile-1:hover { box-shadow: 0 20px 40px -16px var(--cat-glow-1); }
+.cat-tile-2:hover { box-shadow: 0 20px 40px -16px var(--cat-glow-2); }
+.cat-tile-3:hover { box-shadow: 0 20px 40px -16px var(--cat-glow-3); }
+.cat-tile-4:hover { box-shadow: 0 20px 40px -16px var(--cat-glow-4); }
+.cat-tile-5:hover { box-shadow: 0 20px 40px -16px var(--cat-glow-5); }
+.cat-tile-6:hover { box-shadow: 0 20px 40px -16px var(--cat-glow-6); }
+
+.cat-tile[aria-pressed="true"] {
+  border-color: oklch(100% 0 0 / 0.95);
+  outline: 2px solid oklch(100% 0 0 / 0.6);
+  outline-offset: 2px;
+}
+
+.cat-text-1 { color: oklch(72% 0.19 30); }
+.cat-text-2 { color: oklch(82% 0.18 90); }
+.cat-text-3 { color: oklch(72% 0.17 230); }
+.cat-text-4 { color: oklch(70% 0.21 325); }
+.cat-text-5 { color: oklch(75% 0.2 152); }
+.cat-text-6 { color: oklch(68% 0.19 270); }
+
+/* Product Cards */
+.product-card {
+  will-change: transform;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.26s ease, box-shadow 0.26s ease;
+}
+
+.product-card:hover {
+  transform: translateY(-4px) scale(1.008);
+  border-color: var(--border-strong);
+  box-shadow: 0 16px 32px -12px oklch(0% 0 0 / 0.5);
+}
+
+.product-card:hover .product-image {
+  transform: scale(1.03);
+}
+
+.product-image {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Recent purchases ticker */
+.recent-purchases-ticker {
+  overflow: hidden;
+}
+
+.recent-purchases-track {
+  width: max-content;
+  animation: 32s linear infinite ticker-scroll;
+  display: flex;
+}
+
+.recent-purchases-ticker:hover .recent-purchases-track {
+  animation-play-state: paused;
+}
+
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes cart-bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-4px) scale(1.04); }
+  70% { transform: translateY(1px) scale(0.99); }
+}
+
+.cart-bounce {
+  animation: cart-bounce 0.45s ease-in-out;
+}
+
+.shadow-panel {
+  box-shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--border);
+}
+
+@keyframes logo-bob {
+  0%, 100% {
+    transform: translateY(0);
+    filter: drop-shadow(0 12px 28px rgba(255, 119, 0, 0.45));
+  }
+  50% {
+    transform: translateY(-12px);
+    filter: drop-shadow(0 24px 38px rgba(168, 85, 247, 0.5));
+  }
+}
+
+.logo-float {
+  animation: logo-bob 5s ease-in-out infinite;
+}
+
+/* WonderMC Winter Ambient Elements */
+.winter-snowflake {
+  position: absolute;
+  top: -30px;
+  color: #e0f2fe;
+  user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(186, 230, 253, 0.7));
+  animation: snow-fall linear infinite;
+  will-change: transform;
+}
+
+@keyframes snow-fall {
+  0% {
+    transform: translateY(0) translateX(0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  90% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(115vh) translateX(var(--drift, 30px)) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.aurora-curtain {
+  background: radial-gradient(ellipse 90% 40% at 50% -10%, rgba(6, 182, 212, 0.22), rgba(99, 102, 241, 0.16) 50%, transparent 80%);
+  animation: aurora-wave 24s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes aurora-wave {
+  0% { transform: scaleX(1) translateY(0); opacity: 0.65; }
+  50% { transform: scaleX(1.15) translateY(4%); opacity: 0.95; }
+  100% { transform: scaleX(0.95) translateY(-2%); opacity: 0.7; }
+}
+
+.winter-fog {
+  background:
+    radial-gradient(ellipse at 25% 65%, rgba(186, 230, 253, 0.10), transparent 55%),
+    radial-gradient(ellipse at 60% 75%, rgba(125, 211, 252, 0.08), transparent 50%),
+    radial-gradient(ellipse at 85% 60%, rgba(186, 230, 253, 0.10), transparent 55%);
+  filter: blur(10px);
+  animation: winter-fog-drift 35s ease-in-out infinite alternate;
+}
+
+.winter-fog-two {
+  animation-duration: 50s;
+  animation-direction: alternate-reverse;
+}
+
+@keyframes winter-fog-drift {
+  from { transform: translateX(-10%); }
+  to { transform: translateX(10%); }
+}
+
+/* Snowflake & Emoji Burst Effect for User Clicks */
+@keyframes snowflakeBlast {
+  0% {
+    transform: translate(-50%, -50%) scale(0.25) rotate(0deg);
+    opacity: 1;
+    filter: drop-shadow(0 0 10px var(--glow-color, rgba(125, 211, 252, 0.9)));
+  }
+  45% {
+    transform: translate(-50%, -50%) scale(1.26) rotate(var(--blast-mid-rot, 180deg));
+    opacity: 1;
+    filter: drop-shadow(0 0 20px var(--glow-color, rgba(186, 230, 253, 0.95)));
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0.72) rotate(var(--blast-rot, 360deg));
+    opacity: var(--end-opacity, 0);
+    filter: drop-shadow(0 0 0px transparent);
+  }
+}
+
+@keyframes clickHeroFloat {
+  0% {
+    transform: translate(-50%, -50%) translateY(0px) scale(0.62) rotate(-8deg);
+    opacity: 1;
+    filter: drop-shadow(0 0 10px var(--glow-color, rgba(251, 191, 36, 0.9)));
+  }
+  26% {
+    transform: translate(-50%, -50%) translateY(-10px) scale(1.26) rotate(5deg);
+    opacity: 1;
+    filter: drop-shadow(0 0 20px var(--glow-color, rgba(251, 191, 36, 1)));
+  }
+  65% {
+    transform: translate(-50%, -50%) translateY(-20px) scale(1.04) rotate(-3deg);
+    opacity: 0.92;
+    filter: drop-shadow(0 0 14px var(--glow-color, rgba(251, 191, 36, 0.85)));
+  }
+  100% {
+    transform: translate(-50%, -50%) translateY(-32px) scale(0.76) rotate(2deg);
+    opacity: var(--end-opacity, 0);
+    filter: drop-shadow(0 0 0px transparent);
+  }
+}
+
+@keyframes clickRippleRing {
+  0% {
+    transform: translate(-50%, -50%) scale(0.22);
+    opacity: 0.9;
+  }
+  65% {
+    transform: translate(-50%, -50%) scale(1.05);
+    opacity: 0.42;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.38);
+    opacity: 0;
+  }
+}
+
+@keyframes clickFireworkBurstRing {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2) rotate(0deg);
+    opacity: 0.95;
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(1.06) rotate(22deg);
+    opacity: 0.72;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.38) rotate(40deg);
+    opacity: 0;
+  }
+}
+
+@keyframes pumpkinBlast {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2) rotate(0deg);
+    opacity: 1;
+    filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.95));
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.3) rotate(180deg);
+    opacity: 1;
+    filter: drop-shadow(0 0 22px rgba(186, 230, 253, 1));
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0.7) rotate(360deg);
+    opacity: 0;
+    filter: drop-shadow(0 0 0px rgba(56, 189, 248, 0));
+  }
+}
+
+@keyframes particleFly {
+  0% {
+    transform: translate(-50%, -50%) scale(0.45) rotate(0deg);
+    opacity: 0.95;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.05) rotate(var(--rot, 360deg));
+    opacity: var(--end-opacity, 0);
+  }
+}
+
+@keyframes clickParticleGlide {
+  0% {
+    transform: translate(-50%, -50%) translate(0px, 0px) scale(0.55) rotate(0deg);
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) scale(0.95) rotate(var(--rot, 12deg));
+    opacity: var(--end-opacity, 0);
+  }
+}
+
+@keyframes spiderCrawlUp {
+  0% {
+    transform: translate(-50%, 150px) scale(0.6) rotate(0deg);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(-50%, -15vh) scale(1.8) rotate(-15deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(-50%, -45vh) scale(2.8) rotate(15deg);
+    opacity: 1;
+  }
+  80% {
+    transform: translate(-50%, -75vh) scale(3.5) rotate(-10deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -130vh) scale(4) rotate(0deg);
+    opacity: 0;
+  }
+}
+
+@keyframes webCoverFade {
+  0% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  15% {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
+  85% {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
+  100% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+}
+
+@keyframes websiteRipOpen {
+  0% {
+    clip-path: polygon(0 0, 100% 0, 100% 0, 0 0);
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  20% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    opacity: 1;
+    transform: scale(1);
+  }
+  80% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    clip-path: polygon(50% 50%, 50% 50%, 50% 50%, 50% 50%);
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes spiderTearSlash {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2) rotate(-30deg);
+    opacity: 0;
+  }
+  25% {
+    transform: translate(-50%, -50%) scale(2.2) rotate(15deg);
+    opacity: 1;
+    filter: drop-shadow(0 0 40px #ff7a1a);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.8) rotate(-15deg) translate(30px, -20px);
+    opacity: 1;
+  }
+  75% {
+    transform: translate(-50%, -50%) scale(2.8) rotate(10deg) translate(-30px, 30px);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(4) rotate(0deg);
+    opacity: 0;
+  }
+}
+
+@keyframes spiderHang {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(220px);
+  }
+}
+
+@keyframes silkStretch {
+  0%, 100% {
+    height: 30vh;
+  }
+  50% {
+    height: calc(30vh + 220px);
+  }
+}
+
+@keyframes spiderLegs {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(-10deg) scale(1.1);
+  }
+  50% {
+    transform: rotate(0deg) scale(0.95);
+  }
+  75% {
+    transform: rotate(10deg) scale(1.08);
+  }
+}
+
+@keyframes icon-float {
+  0%, 100% { transform: translateY(0px) rotate(0deg) scale(1); }
+  50% { transform: translateY(-8px) rotate(3deg) scale(1.06); }
+}
+
+@keyframes sparkle-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+
+.animate-icon-float {
+  animation: icon-float 4s ease-in-out infinite;
+}
+
+.animate-sparkle {
+  animation: sparkle-pulse 2.2s ease-in-out infinite;
+}
+
+/* New Year 2027 Firework Bursts */
+.firework-burst {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, rgba(251, 191, 36, 0.9) 0%, rgba(251, 191, 36, 0.3) 18%, transparent 55%),
+    repeating-conic-gradient(from 0deg, rgba(253, 224, 71, 0.75) 0deg 4deg, transparent 4deg 24deg),
+    repeating-conic-gradient(from 12deg, rgba(168, 85, 247, 0.75) 0deg 4deg, transparent 4deg 24deg);
+  mask-image: radial-gradient(circle, transparent 14%, black 22%, black 52%, transparent 68%);
+  -webkit-mask-image: radial-gradient(circle, transparent 14%, black 22%, black 52%, transparent 68%);
+  animation: firework-pop 4.6s ease-out infinite;
+  opacity: 0;
+}
+
+@keyframes firework-pop {
+  0% {
+    transform: scale(0.15) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.95;
+  }
+  55% {
+    transform: scale(1.15) rotate(25deg);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(1.45) rotate(45deg);
+    opacity: 0;
+  }
+}
+
+/* Admin Theme Management Card Selection & Click Animations (Lightweight Compositor-Only) */
+.theme-card-base {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.3s ease, box-shadow 0.32s ease;
+  will-change: transform;
+}
+
+.theme-card-selected-winter {
+  border-color: #38bdf8 !important;
+  box-shadow:
+    0 0 0 2px rgba(186, 230, 253, 0.72),
+    0 0 28px rgba(56, 189, 248, 0.55),
+    0 14px 32px -12px rgba(2, 132, 199, 0.65);
+  transform: translateY(-3px);
+}
+
+.theme-card-selected-christmas {
+  border-color: #22c55e !important;
+  box-shadow:
+    0 0 0 2px rgba(239, 68, 68, 0.75),
+    -8px 0 26px rgba(239, 68, 68, 0.55),
+    8px 0 26px rgba(34, 197, 94, 0.55),
+    0 14px 32px -12px rgba(220, 38, 38, 0.5);
+  transform: translateY(-3px);
+}
+
+.theme-card-selected-newyear2027 {
+  border-color: #fbbf24 !important;
+  box-shadow:
+    0 0 0 2px rgba(168, 85, 247, 0.8),
+    -8px 0 28px rgba(251, 191, 36, 0.6),
+    8px 0 28px rgba(168, 85, 247, 0.6),
+    0 14px 34px -12px rgba(124, 58, 237, 0.65);
+  transform: translateY(-3px);
+}
+
+.theme-card-selected-default {
+  border-color: #38bdf8 !important;
+  box-shadow:
+    0 0 0 2px rgba(56, 189, 248, 0.72),
+    0 0 28px rgba(56, 189, 248, 0.55),
+    0 14px 32px -12px rgba(2, 132, 199, 0.65);
+  transform: translateY(-3px);
+}
+
+.theme-card-selected-ramadan {
+  border-color: #fbbf24 !important;
+  box-shadow:
+    0 0 0 2px rgba(251, 191, 36, 0.85),
+    -8px 0 28px rgba(16, 185, 129, 0.65),
+    8px 0 28px rgba(251, 191, 36, 0.65),
+    0 14px 34px -12px rgba(4, 120, 87, 0.7);
+  transform: translateY(-3px);
+}
+
+/* Primary Theme Emoji Animations */
+@keyframes theme-emoji-default-sparkle {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.15) rotate(14deg); }
+}
+
+@keyframes theme-emoji-ramadan-sway {
+  0%, 100% { transform: translateY(0) rotate(-6deg) scale(1); }
+  50% { transform: translateY(-4px) rotate(6deg) scale(1.12); }
+}
+
+@keyframes ramadan-lantern-swing {
+  0% { transform: rotate(-5deg); }
+  100% { transform: rotate(5deg); }
+}
+
+@keyframes ramadan-lantern-glow {
+  0% { filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.75)); opacity: 0.85; }
+  100% { filter: drop-shadow(0 0 24px rgba(253, 224, 71, 1)); opacity: 1; }
+}
+
+@keyframes ramadan-star-twinkle {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+
+@keyframes ramadan-crescent-float {
+  0% { transform: translateY(0) rotate(-2deg); }
+  100% { transform: translateY(-8px) rotate(4deg); }
+}
+
+@keyframes theme-emoji-winter-spin {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  50% { transform: translateY(-3px) rotate(18deg) scale(1.12); }
+}
+
+@keyframes theme-emoji-christmas-sway {
+  0%, 100% { transform: rotate(-4deg) scale(1); }
+  50% { transform: rotate(5deg) scale(1.1); }
+}
+
+@keyframes theme-emoji-firework-pop {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  45% { transform: scale(1.18) rotate(-6deg); }
+  70% { transform: scale(0.96) rotate(4deg); }
+}
+
+.theme-emoji-default {
+  display: inline-block;
+  animation: theme-emoji-default-sparkle 3s ease-in-out infinite;
+  will-change: transform;
+}
+
+.theme-emoji-ramadan {
+  display: inline-block;
+  transform-origin: top center;
+  animation: theme-emoji-ramadan-sway 3.2s ease-in-out infinite;
+  will-change: transform;
+}
+
+.theme-emoji-winter {
+  display: inline-block;
+  animation: theme-emoji-winter-spin 3.6s ease-in-out infinite;
+  will-change: transform;
+}
+
+.theme-emoji-christmas {
+  display: inline-block;
+  transform-origin: bottom center;
+  animation: theme-emoji-christmas-sway 2.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+.theme-emoji-newyear2027 {
+  display: inline-block;
+  animation: theme-emoji-firework-pop 2.4s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Winter Selection Snowfall + Click Ice Shimmer */
+@keyframes card-snow-fall {
+  0% {
+    transform: translate3d(0, -14px, 0) scale(0.8);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.92;
+  }
+  85% {
+    opacity: 0.82;
+  }
+  100% {
+    transform: translate3d(10px, 165px, 0) scale(1.05);
+    opacity: 0;
+  }
+}
+
+.card-snowflake {
+  position: absolute;
+  top: 0;
+  pointer-events: none;
+  color: #e0f2fe;
+  text-shadow: 0 0 8px rgba(56, 189, 248, 0.85);
+  animation: card-snow-fall linear infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes ice-shimmer-sweep {
+  0% {
+    transform: translateX(-120%) skewX(-20deg);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(220%) skewX(-20deg);
+    opacity: 0;
+  }
+}
+
+.ice-shimmer-sweep {
+  position: absolute;
+  inset: 0;
+  width: 55%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(186, 230, 253, 0.55), rgba(255, 255, 255, 0.72), transparent);
+  animation: ice-shimmer-sweep 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes theme-click-pill-pop {
+  0% {
+    transform: scale(0.75) translateY(6px);
+    opacity: 0;
+  }
+  12% {
+    transform: scale(1.06) translateY(0);
+    opacity: 1;
+  }
+  78% {
+    transform: scale(1) translateY(-2px);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.95) translateY(-8px);
+    opacity: 0;
+  }
+}
+
+.theme-click-pill {
+  animation: theme-click-pill-pop 1.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* Christmas Twinkling Lights & Gift Boxes */
+@keyframes christmas-light-twinkle {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.22);
+  }
+}
+
+.card-twinkle-light {
+  position: absolute;
+  pointer-events: none;
+  animation: christmas-light-twinkle 1.6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes christmas-gift-hop {
+  0%, 100% {
+    transform: translateY(0) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(6deg) scale(1.1);
+  }
+}
+
+.card-gift-hop {
+  position: absolute;
+  pointer-events: none;
+  animation: christmas-gift-hop 1.9s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* New Year 2027 Sparkles, Firework Burst Ring & 2027 Click Celebration */
+@keyframes ny-sparkle-glint {
+  0%, 100% {
+    transform: scale(0.6) rotate(0deg);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.25) rotate(22deg);
+    opacity: 1;
+  }
+}
+
+.ny-sparkle-dot {
+  position: absolute;
+  pointer-events: none;
+  animation: ny-sparkle-glint 1.5s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes ny-firework-ring-burst {
+  0% {
+    transform: translate(-50%, -50%) scale(0.18) rotate(0deg);
+    opacity: 1;
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.15) rotate(25deg);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.45) rotate(45deg);
+    opacity: 0;
+  }
+}
+
+.ny-click-firework-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, rgba(253, 224, 71, 0.95) 0%, rgba(251, 191, 36, 0.35) 20%, transparent 55%),
+    repeating-conic-gradient(from 0deg, rgba(251, 191, 36, 0.85) 0deg 5deg, transparent 5deg 22deg),
+    repeating-conic-gradient(from 11deg, rgba(168, 85, 247, 0.9) 0deg 5deg, transparent 5deg 22deg);
+  mask-image: radial-gradient(circle, transparent 15%, black 24%, black 55%, transparent 72%);
+  -webkit-mask-image: radial-gradient(circle, transparent 15%, black 24%, black 55%, transparent 72%);
+  animation: ny-firework-ring-burst 1.05s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes ny-2027-celebration-pop {
+  0% {
+    transform: scale(0.65) translateY(8px);
+    opacity: 0;
+  }
+  12% {
+    transform: scale(1.14) translateY(-2px);
+    opacity: 1;
+  }
+  76% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.92) translateY(-6px);
+    opacity: 0;
+  }
+}
+
+.ny-2027-celebration {
+  animation: ny-2027-celebration-pop 1.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .winter-snowflake,
+  .aurora-curtain,
+  .winter-fog,
+  .firework-burst,
+  .animate-icon-float,
+  .animate-sparkle,
+  .wondermc-banner,
+  .recent-purchases-track,
+  .theme-emoji-winter,
+  .theme-emoji-christmas,
+  .theme-emoji-newyear2027,
+  .card-snowflake,
+  .ice-shimmer-sweep,
+  .theme-click-pill,
+  .card-twinkle-light,
+  .card-gift-hop,
+  .ny-sparkle-dot,
+  .ny-click-firework-ring,
+  .ny-2027-celebration {
+    animation: none !important;
+  }
+  .gaming-background,
+  .frost-panel,
+  .shadow-panel,
+  .theme-card-base {
+    transition-duration: 0.01ms !important;
+  }
+}
