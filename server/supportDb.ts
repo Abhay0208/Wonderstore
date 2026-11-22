@@ -70,48 +70,23 @@ export interface RealtimeSupportEvent {
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'support_db.json');
-const SESSION_SECRET_FILE = path.join(DATA_DIR, 'session_secret.key');
 
-function loadOrCreateSessionSecret(): string {
-  const envSecret = (process.env.SUPPORT_SESSION_SECRET || '').trim();
-  if (envSecret) return envSecret;
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (fs.existsSync(SESSION_SECRET_FILE)) {
-      const existing = fs.readFileSync(SESSION_SECRET_FILE, 'utf-8').trim();
-      if (existing.length >= 32) return existing;
-    }
-    const generated = crypto.randomBytes(32).toString('hex');
-    fs.writeFileSync(SESSION_SECRET_FILE, generated, 'utf-8');
-    return generated;
-  } catch {
-    return crypto.randomBytes(32).toString('hex');
-  }
+// Session signing secret MUST come from the environment. Never fall back to an
+// ephemeral local file (disappears on Render restart) or a generated secret.
+const SESSION_SECRET = (process.env.SUPPORT_SESSION_SECRET || '').trim();
+
+if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
+  // Fail loud rather than issuing tokens signed with a weak/ephemeral secret.
+  console.warn(
+    '[supportDb] WARNING: SUPPORT_SESSION_SECRET is missing or shorter than 32 chars. ' +
+    'Session tokens will not be issued until a strong SUPPORT_SESSION_SECRET is configured.'
+  );
 }
 
-const SESSION_SECRET = loadOrCreateSessionSecret();
-
-const DEFAULT_OWNER_PASSKEY =
-  process.env.ADMIN_SECURITY_KEY || 'vQ7!mZ2#L9@xR4$kT8^pN6&yW3';
-
-const DEFAULT_STAFF_PERMISSIONS: SupportStaffPermission[] = [
-  {
-    id: 'staff-support-lead',
-    name: 'Support & News Admin',
-    roleTitle: 'Support Moderator',
-    passkey: 'supportpass123',
-    active: true,
-    canViewAllTickets: false, // By default sees assigned tickets until Admin enables View All
-    canReply: true,
-    canAssign: false,
-    canChangeStatus: true,
-    canAddInternalNotes: true,
-    canDeleteTickets: false,
-    updatedAt: new Date().toISOString(),
-  },
-];
+// No hardcoded owner passkey. Owner credentials are verified exclusively against
+// ADMIN_SECURITY_KEY in the backend auth middleware (server/middleware/auth.ts).
+// No hardcoded staff passkeys. Staff identities live in Supabase
+// (support_staff_permissions) and are provisioned via the migration + admin panel.
 
 function createEmptyDb(): SupportDbSchema {
   return {
@@ -121,7 +96,7 @@ function createEmptyDb(): SupportDbSchema {
     support_staff_assignments: [],
     support_notifications: [],
     support_ratings: [],
-    support_staff_permissions: [...DEFAULT_STAFF_PERMISSIONS],
+    support_staff_permissions: [],
     ticket_history: [],
   };
 }
@@ -140,12 +115,64 @@ class SupportDatabase {
     }
   }
 
-  public read(): SupportDbSchema {
+  // Read a single table from Supabase, falling back to local JSON cache/file.
+  private async readTableFromSupabase<T>(table: string, local: T[]): Promise<T[]> {
+    const admin = getSupabaseAdmin();
+    if (!admin) return local;
+    try {
+      const { data, error } = await admin.from(table).select("*");
+      if (error) {
+        console.error(`[supportDb] read ${table}:`, error.message);
+        return local;
+      }
+      return Array.isArray(data) ? (data as T[]) : local;
+    } catch (err: any) {
+      console.error(`[supportDb] read ${table}:`, err?.message || String(err));
+      return local;
+    }
+  }
+
+  public async readAsync(): Promise<SupportDbSchema> {
     if (this.cache) return this.cache;
+    // Supabase is the source of truth. Local JSON is a fallback for offline/
+    // first-boot before migration has run.
+    const admin = getSupabaseAdmin();
+    if (admin) {
+      try {
+        const [tickets, messages, attachments, assignments, notifications, ratings, staff, history] =
+          await Promise.all([
+            this.readTableFromSupabase<any>("support_tickets", []),
+            this.readTableFromSupabase<any>("support_messages", []),
+            this.readTableFromSupabase<any>("support_attachments", []),
+            this.readTableFromSupabase<any>("support_staff_assignments", []),
+            this.readTableFromSupabase<any>("support_notifications", []),
+            this.readTableFromSupabase<any>("support_ratings", []),
+            this.readTableFromSupabase<any>("support_staff_permissions", []),
+            this.readTableFromSupabase<any>("ticket_history", []),
+          ]);
+
+        const hydrated: SupportDbSchema = {
+          support_tickets: tickets.map(this.mapTicketFromDb),
+          support_messages: messages.map(this.mapMessageFromDb),
+          support_attachments: attachments.map(this.mapAttachmentFromDb),
+          support_staff_assignments: assignments,
+          support_notifications: notifications,
+          support_ratings: ratings.map(this.mapRatingFromDb),
+          support_staff_permissions: staff.map(this.mapStaffFromDb),
+          ticket_history: history,
+        };
+        this.cache = hydrated;
+        return hydrated;
+      } catch (err: any) {
+        console.error("[supportDb] Supabase read failed, falling back to local JSON:", err?.message || String(err));
+      }
+    }
+
+    // Local JSON fallback
     this.ensureDir();
     if (!fs.existsSync(DB_FILE)) {
       const initial = createEmptyDb();
-      this.write(initial);
+      await this.writeAsync(initial);
       return initial;
     }
     try {
@@ -158,93 +185,210 @@ class SupportDatabase {
         support_staff_assignments: Array.isArray(parsed.support_staff_assignments) ? parsed.support_staff_assignments : [],
         support_notifications: Array.isArray(parsed.support_notifications) ? parsed.support_notifications : [],
         support_ratings: Array.isArray(parsed.support_ratings) ? parsed.support_ratings : [],
-        support_staff_permissions:
-          Array.isArray(parsed.support_staff_permissions) && parsed.support_staff_permissions.length > 0
-            ? parsed.support_staff_permissions
-            : [...DEFAULT_STAFF_PERMISSIONS],
+        support_staff_permissions: Array.isArray(parsed.support_staff_permissions) && parsed.support_staff_permissions.length > 0
+          ? parsed.support_staff_permissions
+          : [],
         ticket_history: Array.isArray(parsed.ticket_history) ? parsed.ticket_history : [],
       };
       this.cache = hydrated;
       return hydrated;
     } catch {
       const initial = createEmptyDb();
-      this.write(initial);
+      await this.writeAsync(initial);
       return initial;
     }
   }
 
-  private write(db: SupportDbSchema): void {
-    this.cache = db;
+  // Synchronous read retained for call sites not yet converted to async.
+  // Prefer readAsync(); this returns the in-memory cache or local file only.
+  public readSync(): SupportDbSchema {
+    if (this.cache) return this.cache;
+    this.ensureDir();
+    if (!fs.existsSync(DB_FILE)) {
+      const initial = createEmptyDb();
+      this.cache = initial;
+      return initial;
+    }
+    try {
+      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      const parsed = JSON.parse(raw) as Partial<SupportDbSchema>;
+      const hydrated: SupportDbSchema = {
+        support_tickets: Array.isArray(parsed.support_tickets) ? parsed.support_tickets : [],
+        support_messages: Array.isArray(parsed.support_messages) ? parsed.support_messages : [],
+        support_attachments: Array.isArray(parsed.support_attachments) ? parsed.support_attachments : [],
+        support_staff_assignments: Array.isArray(parsed.support_staff_assignments) ? parsed.support_staff_assignments : [],
+        support_notifications: Array.isArray(parsed.support_notifications) ? parsed.support_notifications : [],
+        support_ratings: Array.isArray(parsed.support_ratings) ? parsed.support_ratings : [],
+        support_staff_permissions: Array.isArray(parsed.support_staff_permissions) && parsed.support_staff_permissions.length > 0
+          ? parsed.support_staff_permissions
+          : [],
+        ticket_history: Array.isArray(parsed.ticket_history) ? parsed.ticket_history : [],
+      };
+      this.cache = hydrated;
+      return hydrated;
+    } catch {
+      const initial = createEmptyDb();
+      this.cache = initial;
+      return initial;
+    }
+  }
 
+  // Persist to Supabase (awaited), then to local JSON as a durable backup.
+  private async writeAsync(db: SupportDbSchema): Promise<void> {
+    this.cache = db;
     const admin = getSupabaseAdmin();
     if (admin) {
-      // Upsert tickets
-      if (db.support_tickets.length) {
-        admin.from('support_tickets').upsert(
-          db.support_tickets.map((t) => ({
-            id: t.id,
-            ticket_number: t.ticketNumber,
-            user_id: t.userId,
-            username: t.username,
-            user_email: t.userEmail,
-            ign: t.ign,
-            contact: t.contact,
-            discord_contact: t.discordContact,
-            category: t.category,
-            priority: t.priority,
-            subject: t.subject,
-            description: t.description,
-            screenshot_url: t.screenshotUrl,
-            status: t.status,
-            assigned_staff_id: t.assignedStaffId,
-            assigned_staff_name: t.assignedStaffName,
-            assigned_staff_role: t.assignedStaffRole,
-            created_at: t.createdAt,
-            updated_at: t.updatedAt,
-            last_reply_at: t.lastReplyAt,
-            last_reply_by_role: t.lastReplyByRole,
-            unread_by_user: t.unreadByUser ?? 0,
-            unread_by_staff: t.unreadByStaff ?? 0,
-            attachments_count: t.attachmentsCount ?? 0,
-            rating_submitted: t.ratingSubmitted ?? false,
-            admin_note: t.adminNote,
-            staff_notes: t.staffNotes,
-          })),
-          { onConflict: 'id' }
-        ).then(({ error }) => {
-          if (error) console.error('[supportDb] tickets upsert', error.message);
-        });
+      try {
+        if (db.support_tickets.length) {
+          await admin.from("support_tickets").upsert(
+            db.support_tickets.map((t) => ({
+              id: t.id,
+              ticket_number: t.ticketNumber,
+              user_id: t.userId,
+              username: t.username,
+              user_email: t.userEmail,
+              ign: t.ign,
+              contact: t.contact,
+              discord_contact: t.discordContact,
+              category: t.category,
+              priority: t.priority,
+              subject: t.subject,
+              description: t.description,
+              screenshot_url: t.screenshotUrl,
+              status: t.status,
+              assigned_staff_id: t.assignedStaffId,
+              assigned_staff_name: t.assignedStaffName,
+              assigned_staff_role: t.assignedStaffRole,
+              created_at: t.createdAt,
+              updated_at: t.updatedAt,
+              last_reply_at: t.lastReplyAt,
+              last_reply_by_role: t.lastReplyByRole,
+              unread_by_user: t.unreadByUser ?? 0,
+              unread_by_staff: t.unreadByStaff ?? 0,
+              attachments_count: t.attachmentsCount ?? 0,
+              rating_submitted: t.ratingSubmitted ?? false,
+              admin_note: t.adminNote,
+              staff_notes: t.staffNotes,
+            })),
+            { onConflict: "id" }
+          );
+        }
+        if (db.support_messages.length) {
+          await admin.from("support_messages").upsert(
+            db.support_messages.map((m) => ({
+              id: m.id,
+              ticket_id: m.ticketId,
+              ticket_owner_id: m.ticketOwnerId,
+              sender_id: m.senderId,
+              sender_name: m.senderName,
+              sender_role: m.senderRole,
+              sender_staff_title: m.senderStaffTitle,
+              message: m.message,
+              is_internal: m.isInternal,
+              attachment_ids: m.attachmentIds ?? [],
+              created_at: m.createdAt,
+            })),
+            { onConflict: "id" }
+          );
+        }
+        if (db.support_staff_permissions.length) {
+          await admin.from("support_staff_permissions").upsert(
+            db.support_staff_permissions.map((s) => ({
+              id: s.id,
+              staff_id: s.id,
+              name: s.name,
+              role_title: s.roleTitle,
+              passkey_hash: null,
+              email: s.email,
+              active: s.active,
+              can_view_all_tickets: s.canViewAllTickets,
+              can_reply: s.canReply,
+              can_assign: s.canAssign,
+              can_change_status: s.canChangeStatus,
+              can_add_internal_notes: s.canAddInternalNotes,
+              can_delete_tickets: s.canDeleteTickets,
+              updated_at: s.updatedAt,
+            })),
+            { onConflict: "id" }
+          );
+        }
+        if (db.support_ratings.length) {
+          await admin.from("support_ratings").upsert(
+            db.support_ratings.map((r) => ({
+              id: r.id,
+              ticket_id: r.ticketId,
+              user_id: r.userId,
+              rating: r.stars,
+              comment: r.feedback,
+              created_at: r.createdAt,
+            })),
+            { onConflict: "id" }
+          );
+        }
+        if (db.support_notifications.length) {
+          await admin.from("support_notifications").upsert(
+            db.support_notifications.map((n) => ({
+              id: n.id,
+              user_id: n.recipientType === "user" ? n.recipientId : undefined,
+              staff_id: n.recipientType !== "user" ? n.recipientId : undefined,
+              recipient_type: n.recipientType,
+              recipient_id: n.recipientId,
+              type: n.type,
+              title: n.title,
+              message: n.body,
+              ticket_id: n.ticketId,
+              is_read: n.read,
+              created_at: n.createdAt,
+            })),
+            { onConflict: "id" }
+          );
+        }
+        if (db.ticket_history.length) {
+          await admin.from("ticket_history").upsert(
+            db.ticket_history.map((h) => ({
+              id: h.id,
+              ticket_id: h.ticketId,
+              action: h.action,
+              actor_id: undefined,
+              actor_name: h.actorName,
+              actor_role: h.actorRole,
+              details: h.details,
+              created_at: h.createdAt,
+            })),
+            { onConflict: "id" }
+          );
+        }
+      } catch (err: any) {
+        console.error("[supportDb] Supabase write failed:", err?.message || String(err));
+        throw err;
       }
-
-      if (db.support_messages.length) {
-        admin.from('support_messages').upsert(
-          db.support_messages.map((m) => ({
-            id: m.id,
-            ticket_id: m.ticketId,
-            ticket_owner_id: m.ticketOwnerId,
-            sender_id: m.senderId,
-            sender_name: m.senderName,
-            sender_role: m.senderRole,
-            sender_staff_title: m.senderStaffTitle,
-            message: m.message,
-            is_internal: m.isInternal,
-            attachment_ids: m.attachmentIds ?? [],
-            created_at: m.createdAt,
-          })),
-          { onConflict: 'id' }
-        ).then(({ error }) => {
-          if (error) console.error('[supportDb] messages upsert', error.message);
-        });
-      }
-
-      // Other tables can be extended similarly
     }
 
-    // Local fallback
+    // Local durable backup
     try {
       this.ensureDir();
       const tmpFile = `${DB_FILE}.tmp`;
-      fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2), 'utf-8');
+      fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2), "utf-8");
+      fs.renameSync(tmpFile, DB_FILE);
+    } catch {
+      // ignore local write failures
+    }
+  }
+
+  // Backwards-compatible synchronous write wrapper (non-async call sites).
+  // Writes to local JSON immediately; Supabase sync is best-effort background.
+  private write(db: SupportDbSchema): void {
+    this.cache = db;
+    const admin = getSupabaseAdmin();
+    if (admin) {
+      void this.writeAsync(db).catch((err) => {
+        console.error("[supportDb] background Supabase write:", err?.message || String(err));
+      });
+    }
+    try {
+      this.ensureDir();
+      const tmpFile = `${DB_FILE}.tmp`;
+      fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2), "utf-8");
       fs.renameSync(tmpFile, DB_FILE);
     } catch {
       // ignore
@@ -260,6 +404,103 @@ class SupportDatabase {
       ...ev,
       timestamp: new Date().toISOString(),
     } satisfies RealtimeSupportEvent);
+  }
+
+  // ------------------------------------------------------------------
+  // Supabase row → internal type mappers (snake_case DB → camelCase TS)
+  // ------------------------------------------------------------------
+  private mapTicketFromDb(r: any): SupportTicket {
+    return {
+      id: r.id,
+      ticketNumber: r.ticket_number,
+      userId: r.user_id,
+      username: r.username,
+      userEmail: r.user_email,
+      ign: r.ign,
+      contact: r.contact,
+      discordContact: r.discord_contact,
+      category: r.category,
+      priority: r.priority,
+      subject: r.subject,
+      description: r.description,
+      message: r.message,
+      screenshotUrl: r.screenshot_url,
+      status: r.status,
+      assignedStaffId: r.assigned_staff_id,
+      assignedStaffName: r.assigned_staff_name,
+      assignedStaffRole: r.assigned_staff_role,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      lastReplyAt: r.last_reply_at,
+      lastReplyByRole: r.last_reply_by_role,
+      unreadByUser: r.unread_by_user,
+      unreadByStaff: r.unread_by_staff,
+      attachmentsCount: r.attachments_count,
+      ratingSubmitted: r.rating_submitted,
+      adminNote: r.admin_note,
+      staffNotes: r.staff_notes,
+    } as SupportTicket;
+  }
+
+  private mapMessageFromDb(r: any): SupportMessage {
+    return {
+      id: r.id,
+      ticketId: r.ticket_id,
+      ticketOwnerId: r.ticket_owner_id,
+      senderId: r.sender_id,
+      senderName: r.sender_name,
+      senderRole: r.sender_role,
+      senderStaffTitle: r.sender_staff_title,
+      message: r.message,
+      isInternal: r.is_internal,
+      attachmentIds: r.attachment_ids,
+      createdAt: r.created_at,
+    } as SupportMessage;
+  }
+
+  private mapAttachmentFromDb(r: any): SupportAttachment {
+    return {
+      id: r.id,
+      ticketId: r.ticket_id,
+      ticketOwnerId: r.ticket_owner_id,
+      messageId: r.message_id,
+      uploaderId: r.uploader_id,
+      fileName: r.file_name,
+      mimeType: r.mime_type,
+      sizeBytes: r.size_bytes,
+      dataUrl: r.data_url,
+      createdAt: r.created_at,
+    } as SupportAttachment;
+  }
+
+  private mapRatingFromDb(r: any): SupportRating {
+    return {
+      id: r.id,
+      ticketId: r.ticket_id,
+      ticketNumber: r.ticket_id,
+      userId: r.user_id,
+      username: r.user_id,
+      stars: r.rating,
+      feedback: r.comment,
+      createdAt: r.created_at,
+    } as SupportRating;
+  }
+
+  private mapStaffFromDb(r: any): SupportStaffPermission {
+    return {
+      id: r.id,
+      name: r.name,
+      roleTitle: r.role_title,
+      email: r.email,
+      active: r.active ?? true,
+      canViewAllTickets: r.can_view_all_tickets ?? false,
+      canReply: r.can_reply ?? true,
+      canAssign: r.can_assign ?? false,
+      canChangeStatus: r.can_change_status ?? true,
+      canAddInternalNotes: r.can_add_internal_notes ?? true,
+      canDeleteTickets: r.can_delete_tickets ?? false,
+      updatedAt: r.updated_at,
+    } as SupportStaffPermission;
   }
 
   // ==================== TOKEN SIGNING & AUTH ====================
@@ -293,115 +534,57 @@ class SupportDatabase {
     }
   }
 
-  public authenticateStaffOrAdmin(passkey: string, customSubAdminKeys?: { id: string; name: string; password: string; permissions: string[] }[]) {
+  /**
+   * Legacy staff passkey verification (synchronous, cache-based).
+   *
+   * NOTE: Owner login is now handled exclusively by handleOwnerLogin in
+   * server/middleware/auth.ts (verified against ADMIN_SECURITY_KEY env var).
+   * Sub-admin login is handled by handleSubAdminLogin (verified against
+   * Supabase subadmin_keys password hashes). Staff login is handled by
+   * handleStaffLogin (verified against Supabase support_staff_permissions
+   * passkey hashes).
+   *
+   * This method is retained only for backwards-compatible call sites. It does
+   * NOT trust frontend-supplied permission lists and does NOT contain any
+   * hardcoded owner or staff password.
+   */
+  public authenticateStaffOrAdmin(passkey: string): { token: string; staffId: string; name: string; roleTitle: string; permissions: SupportStaffPermission | null } | null {
     const clean = (passkey || '').trim();
     if (!clean) return null;
 
-    if (clean === DEFAULT_OWNER_PASSKEY) {
-      const token = this.signSessionToken({
-        kind: 'staff',
-        uid: 'owner-admin',
-        name: 'Main Server Owner',
-        isAdmin: true,
-        isOwner: true,
-        staffId: 'owner-admin',
-        roleTitle: 'Main Owner',
-      });
-      return {
-        token,
-        isAdmin: true,
-        isOwner: true,
-        staffId: 'owner-admin',
-        name: 'Main Server Owner',
-        roleTitle: 'Main Owner',
-        permissions: null as SupportStaffPermission | null,
-      };
-    }
-
-    const db = this.read();
+    const db = this.readSync();
     const staffMatch = db.support_staff_permissions.find(
-      (s) => s.active && s.passkey && s.passkey.trim() === clean
+      (s) => s.active && typeof s.passkey === "string" && s.passkey.trim() === clean
     );
-    if (staffMatch) {
-      const token = this.signSessionToken({
-        kind: 'staff',
-        uid: staffMatch.id,
-        name: staffMatch.name,
-        isAdmin: false,
-        isOwner: false,
-        staffId: staffMatch.id,
-        roleTitle: staffMatch.roleTitle,
-      });
-      return {
-        token,
-        isAdmin: false,
-        isOwner: false,
-        staffId: staffMatch.id,
-        name: staffMatch.name,
-        roleTitle: staffMatch.roleTitle,
-        permissions: { ...staffMatch, passkey: undefined },
-      };
-    }
+    if (!staffMatch) return null;
 
-    // Also allow any active SubAdminKey synced from admin configuration with tickets, wallet, payment_management, or orders permission
-    if (Array.isArray(customSubAdminKeys)) {
-      const subMatch = customSubAdminKeys.find(
-        (k) =>
-          k.password?.trim() === clean &&
-          Array.isArray(k.permissions) &&
-          (k.permissions.includes('tickets') ||
-            k.permissions.includes('wallet') ||
-            k.permissions.includes('payment_management') ||
-            k.permissions.includes('orders'))
-      );
-      if (subMatch) {
-        const token = this.signSessionToken({
-          kind: 'staff',
-          uid: subMatch.id,
-          name: subMatch.name,
-          isAdmin: false,
-          isOwner: false,
-          staffId: subMatch.id,
-          roleTitle: 'Sub-Admin',
-          subPermissions: subMatch.permissions,
-        });
-        return {
-          token,
-          isAdmin: false,
-          isOwner: false,
-          staffId: subMatch.id,
-          name: subMatch.name,
-          roleTitle: 'Sub-Admin',
-          subPermissions: subMatch.permissions,
-          permissions: {
-            id: subMatch.id,
-            name: subMatch.name,
-            roleTitle: 'Sub-Admin',
-            active: true,
-            canViewAllTickets: false,
-            canReply: true,
-            canAssign: false,
-            canChangeStatus: true,
-            canAddInternalNotes: true,
-            canDeleteTickets: false,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-      }
-    }
-
-    return null;
+    const token = this.signSessionToken({
+      kind: "staff",
+      uid: staffMatch.id,
+      name: staffMatch.name,
+      isAdmin: false,
+      isOwner: false,
+      staffId: staffMatch.id,
+      roleTitle: staffMatch.roleTitle,
+    });
+    return {
+      token,
+      staffId: staffMatch.id,
+      name: staffMatch.name,
+      roleTitle: staffMatch.roleTitle,
+      permissions: { ...staffMatch, passkey: undefined },
+    };
   }
 
   public getStaffPermissionRecord(session: SessionTokenPayload): SupportStaffPermission | undefined {
     if (session.isAdmin) return undefined;
-    const db = this.read();
+    const db = this.readSync();
     return db.support_staff_permissions.find((s) => s.id === (session.staffId || session.uid));
   }
 
   // ==================== TICKETS QUERIES & MUTATIONS ====================
   public listTicketsForSession(session: SessionTokenPayload): SupportTicket[] {
-    const db = this.read();
+    const db = this.readSync();
     if (session.kind === 'user') {
       return db.support_tickets
         .filter((t) => t.userId === session.uid)
@@ -422,7 +605,7 @@ class SupportDatabase {
     ticketId: string,
     session: SessionTokenPayload
   ): { ok: true; bundle: SupportTicketDetailBundle } | { ok: false; status: number; error: string } {
-    const db = this.read();
+    const db = this.readSync();
     const ticket = db.support_tickets.find((t) => t.id === ticketId || t.ticketNumber === ticketId);
     if (!ticket) {
       return { ok: false, status: 404, error: 'Ticket not found.' };
@@ -506,7 +689,7 @@ class SupportDatabase {
       }
     }
 
-    const db = this.read();
+    const db = this.readSync();
     const existingNums = new Set(db.support_tickets.map((t) => t.ticketNumber));
     const ticketNumber = generateUniqueTicketNumber(existingNums);
     const now = new Date().toISOString();
@@ -623,7 +806,7 @@ class SupportDatabase {
       if (attErr) return { ok: false, status: 400, error: attErr };
     }
 
-    const db = this.read();
+    const db = this.readSync();
     const idx = db.support_tickets.findIndex((t) => t.id === ticketId || t.ticketNumber === ticketId);
     if (idx === -1) return { ok: false, status: 404, error: 'Ticket not found.' };
     const ticket = db.support_tickets[idx];
@@ -786,7 +969,7 @@ class SupportDatabase {
   }
 
   public markTicketRead(ticketId: string, session: SessionTokenPayload): SupportTicket | null {
-    const db = this.read();
+    const db = this.readSync();
     const idx = db.support_tickets.findIndex((t) => t.id === ticketId);
     if (idx === -1) return null;
     const t = db.support_tickets[idx];
@@ -822,7 +1005,7 @@ class SupportDatabase {
     if (session.kind !== 'staff') {
       return { ok: false, status: 403, error: 'Forbidden: staff or admin role required.' };
     }
-    const db = this.read();
+    const db = this.readSync();
     const idx = db.support_tickets.findIndex((t) => t.id === ticketId || t.ticketNumber === ticketId);
     if (idx === -1) return { ok: false, status: 404, error: 'Ticket not found.' };
     const current = db.support_tickets[idx];
@@ -984,7 +1167,7 @@ class SupportDatabase {
       return { ok: false, status: 403, error: 'Forbidden: delete permission required.' };
     }
 
-    const db = this.read();
+    const db = this.readSync();
     const target = db.support_tickets.find((t) => t.id === ticketId);
     if (!target) return { ok: false, status: 404, error: 'Ticket not found.' };
 
@@ -1014,7 +1197,7 @@ class SupportDatabase {
     if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
       return { ok: false, status: 400, error: 'Rating must be an integer between 1 and 5 stars.' };
     }
-    const db = this.read();
+    const db = this.readSync();
     const idx = db.support_tickets.findIndex((t) => t.id === ticketId);
     if (idx === -1) return { ok: false, status: 404, error: 'Ticket not found.' };
     const ticket = db.support_tickets[idx];
@@ -1056,7 +1239,7 @@ class SupportDatabase {
   }
 
   public listRatings(session: SessionTokenPayload): SupportRating[] {
-    const db = this.read();
+    const db = this.readSync();
     if (session.kind === 'user') {
       return db.support_ratings.filter((r) => r.userId === session.uid);
     }
@@ -1065,7 +1248,7 @@ class SupportDatabase {
 
   // ==================== NOTIFICATIONS ====================
   public listNotifications(session: SessionTokenPayload): SupportNotification[] {
-    const db = this.read();
+    const db = this.readSync();
     if (session.kind === 'user') {
       return db.support_notifications.filter(
         (n) => n.recipientType === 'user' && n.recipientId === session.uid
@@ -1080,7 +1263,7 @@ class SupportDatabase {
   }
 
   public markNotificationsRead(session: SessionTokenPayload, ids?: string[]): void {
-    const db = this.read();
+    const db = this.readSync();
     const idSet = Array.isArray(ids) && ids.length > 0 ? new Set(ids) : null;
     for (const n of db.support_notifications) {
       if (idSet && !idSet.has(n.id)) continue;
@@ -1105,7 +1288,7 @@ class SupportDatabase {
       body: string;
     }
   ): SupportNotification {
-    const db = this.read();
+    const db = this.readSync();
     const notification: SupportNotification = {
       id: `notif-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
       recipientType: 'user',
@@ -1133,7 +1316,7 @@ class SupportDatabase {
 
   // ==================== STAFF PERMISSIONS MANAGEMENT ====================
   public listStaffMembers(includePasskeys: boolean): SupportStaffPermission[] {
-    const db = this.read();
+    const db = this.readSync();
     return db.support_staff_permissions.map((s) =>
       includePasskeys ? s : { ...s, passkey: undefined }
     );
@@ -1152,7 +1335,7 @@ class SupportDatabase {
       return { ok: false, status: 400, error: 'Staff member name is required.' };
     }
 
-    const db = this.read();
+    const db = this.readSync();
     const now = new Date().toISOString();
     const targetId = member.id || `staff_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
     const existingIdx = db.support_staff_permissions.findIndex((s) => s.id === targetId);
@@ -1204,7 +1387,7 @@ class SupportDatabase {
     if (!session.isAdmin) {
       return { ok: false, status: 403, error: 'Only Main Owner/Admin can remove staff members.' };
     }
-    const db = this.read();
+    const db = this.readSync();
     db.support_staff_permissions = db.support_staff_permissions.filter((s) => s.id !== staffId);
     this.write(db);
     this.emitEvent({ type: 'staff_updated' });

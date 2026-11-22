@@ -343,10 +343,10 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Staff/Admin Operations
-  const loginStaffSession = async (passkey: string, subAdminKeys?: SubAdminKey[]) => {
+  const loginStaffSession = async (passkey: string, _subAdminKeys?: SubAdminKey[]) => {
     setIsLoadingStaffTickets(true);
     try {
-      const sess = await supportService.loginStaffPortal(passkey, subAdminKeys);
+      const sess = await supportService.loginStaffPortal(passkey);
       setStaffSession(sess);
       await refreshStaffData(sess);
       return sess;

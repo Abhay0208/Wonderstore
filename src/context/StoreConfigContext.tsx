@@ -198,8 +198,49 @@ export const StoreConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
         .catch(() => {});
     };
 
+    const syncStoreConfigFromBackend = () => {
+      fetch('/api/store/config')
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data || !data.config || typeof data.config !== 'object') return;
+          const c = data.config;
+          setConfig((prev) => ({
+            ...prev,
+            brand: c.brand ?? prev.brand,
+            brandUpper: c.brand_upper ?? prev.brandUpper,
+            storeName: c.store_name ?? prev.storeName,
+            tagline: c.tagline ?? prev.tagline,
+            description: c.description ?? prev.description,
+            serverIp: c.server_ip ?? prev.serverIp,
+            bedrockPort: c.bedrock_port ?? prev.bedrockPort,
+            serverName: c.server_name ?? prev.serverName,
+            website: c.website ?? prev.website,
+            discordUrl: c.discord_url ?? prev.discordUrl,
+            upiId: c.upi_id ?? prev.upiId,
+            upiPayeeName: c.upi_payee_name ?? prev.upiPayeeName,
+            customQrUrl: c.custom_qr_url ?? prev.customQrUrl,
+            qrMode: c.qr_mode ?? prev.qrMode,
+            whatsappUrl: c.whatsapp_url ?? prev.whatsappUrl,
+            instagramUrl: c.instagram_url ?? prev.instagramUrl,
+            youtubeUrl: c.youtube_url ?? prev.youtubeUrl,
+            telegramUrl: c.telegram_url ?? prev.telegramUrl,
+            copyright: c.copyright ?? prev.copyright,
+            serverTagline: c.server_tagline ?? prev.serverTagline,
+            showServerTagline: c.show_server_tagline ?? prev.showServerTagline,
+            announcements: Array.isArray(c.announcements) ? c.announcements : prev.announcements,
+            showAnnouncements: c.show_announcements ?? prev.showAnnouncements,
+            announcementSpeed: c.announcement_speed ?? prev.announcementSpeed,
+            storeTheme: c.store_theme ?? prev.storeTheme,
+            lifestealBgUrl: c.lifesteal_bg_url ?? prev.lifestealBgUrl,
+            practiceBgUrl: c.practice_bg_url ?? prev.practiceBgUrl,
+          }));
+        })
+        .catch(() => undefined);
+    };
+
     syncThemeFromBackend();
     syncGamemodeVisualsFromBackend();
+    syncStoreConfigFromBackend();
 
     const handleThemeEvent = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -248,11 +289,26 @@ export const StoreConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const updateConfig = (partial: Partial<StoreConfigState>) => {
-    setConfig((prev) => {
-      const next = { ...prev, ...partial };
-      storageAdapter.write(STORAGE_KEYS.STORE_CONFIG, next);
-      return next;
-    });
+    const next = { ...config, ...partial };
+    setConfig(next);
+    storageAdapter.write(STORAGE_KEYS.STORE_CONFIG, next);
+    // Persist shared config to Supabase via the backend. Never persist a raw
+    // password — config contains no credentials. Errors are non-fatal here;
+    // the admin panel shows explicit save confirmations through its own flow.
+    try {
+      const token =
+        sessionStorage.getItem('wondermc_support_staff_token') || '';
+      void fetch('/api/store/config', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(next),
+      }).catch(() => undefined);
+    } catch {
+      // ignore (SSR / storage unavailable)
+    }
   };
 
   const activateTheme = (theme: StoreThemeId) => {

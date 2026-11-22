@@ -115,13 +115,34 @@ export const supportService = {
     return res.token;
   },
 
-  async loginStaffPortal(
-    passkey: string,
-    subAdminKeys?: SubAdminKey[]
-  ): Promise<StaffPortalAuthResponse> {
+  /** Owner credentials are verified exclusively on the backend. */
+  async loginOwner(passkey: string): Promise<StaffPortalAuthResponse> {
+    const res = await apiRequest<StaffPortalAuthResponse>('/api/admin/auth/owner-login', {
+      method: 'POST',
+      body: JSON.stringify({ passkey }),
+    });
+    setStoredStaffSession(res);
+    return res;
+  },
+
+  /** Sub-admin credentials are verified against Supabase password hashes on the backend. */
+  async loginSubAdmin(id: string, password: string): Promise<StaffPortalAuthResponse> {
+    const res = await apiRequest<StaffPortalAuthResponse>('/api/admin/auth/subadmin-login', {
+      method: 'POST',
+      body: JSON.stringify({ id, password }),
+    });
+    setStoredStaffSession(res);
+    return res;
+  },
+
+  /**
+   * Staff credentials are verified against Supabase passkey hashes on the backend.
+   * The frontend no longer sends sub-admin keys or any credential list to the server.
+   */
+  async loginStaffPortal(passkey: string): Promise<StaffPortalAuthResponse> {
     const res = await apiRequest<StaffPortalAuthResponse>('/api/support/auth/staff-login', {
       method: 'POST',
-      body: JSON.stringify({ passkey, subAdminKeys }),
+      body: JSON.stringify({ passkey }),
     });
     setStoredStaffSession(res);
     return res;

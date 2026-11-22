@@ -51,6 +51,75 @@ function createInitialSiteDb(): SiteDbSchema {
 class SiteDatabase {
   private cache: SiteDbSchema | null = null;
 
+  /**
+   * Hydrate the cache from Supabase (source of truth). Falls back to local JSON
+   * on failure. Called once at server startup so every instance serves the
+   * same central data and data survives restarts / redeployments.
+   */
+  public async hydrateFromSupabase(): Promise<void> {
+    const admin = getSupabaseAdmin();
+    if (!admin) return;
+    try {
+      const [catsRes, themesRes, clicksRes, gamemodeRes] = await Promise.all([
+        admin.from('store_categories').select('*'),
+        admin.from('theme_settings').select('*'),
+        admin.from('click_animations').select('*'),
+        admin.from('gamemode_visuals').select('*'),
+      ]);
+      const firstError = [catsRes, themesRes, clicksRes, gamemodeRes].find((r) => r.error);
+      if (firstError?.error) throw firstError.error;
+
+      // Only hydrate if Supabase actually has data (avoid wiping good local
+      // defaults on a freshly created empty project before migration).
+      const hasData =
+        (catsRes.data?.length || 0) > 0 ||
+        (themesRes.data?.length || 0) > 0 ||
+        (clicksRes.data?.length || 0) > 0 ||
+        (gamemodeRes.data?.length || 0) > 0;
+      if (!hasData) return;
+
+      const themeSettings: Record<string, any> = {};
+      for (const row of themesRes.data || []) {
+        themeSettings[row.id] = {
+          id: row.id,
+          enabled: row.enabled,
+          isDefault: row.is_default,
+          startDate: row.start_date,
+          endDate: row.end_date,
+          bannerUrl: row.banner_url,
+          floatingEmojisEnabled: row.floating_emojis_enabled,
+          floatingEmojis: row.floating_emojis,
+          floatingEmojiDensity: row.floating_emoji_density,
+          floatingEmojiSpeed: row.floating_emoji_speed,
+        };
+      }
+      const clickAnimations: Record<string, any> = {};
+      for (const row of clicksRes.data || []) {
+        clickAnimations[row.theme_id] = row.config;
+      }
+      const gamemode = (gamemodeRes.data || [])[0];
+
+      this.cache = {
+        store_categories: (catsRes.data || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          game_mode: c.game_mode,
+          description: c.description,
+          image_url: c.image_url,
+          icon: c.icon,
+          enabled: c.enabled,
+          display_order: c.display_order,
+          theme: c.theme,
+        })),
+        theme_settings: normalizeThemeSettings(themeSettings),
+        click_animations: normalizeClickAnimationsMap(clickAnimations),
+        gamemode_visuals: gamemode ? normalizeGamemodeVisuals(gamemode.settings) : normalizeGamemodeVisuals(DEFAULT_GAMEMODE_VISUALS),
+      } as SiteDbSchema;
+    } catch (err: any) {
+      console.error('[siteDb] Supabase hydration failed, using local JSON:', err?.message || String(err));
+    }
+  }
+
   private load(): SiteDbSchema {
     if (this.cache) return this.cache;
     ensureDataDir();

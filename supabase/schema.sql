@@ -167,8 +167,11 @@ CREATE TABLE IF NOT EXISTS public.subadmin_keys (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   password TEXT NOT NULL,
+  password_hash TEXT,
+  active BOOLEAN DEFAULT TRUE,
   permissions JSONB DEFAULT '[]'::jsonb,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS public.activity_logs (
@@ -252,14 +255,28 @@ CREATE TABLE IF NOT EXISTS public.support_ratings (
 CREATE TABLE IF NOT EXISTS public.support_staff_permissions (
   id TEXT PRIMARY KEY,
   staff_id TEXT,
+  name TEXT,
+  role_title TEXT,
+  passkey_hash TEXT,
+  email TEXT,
+  active BOOLEAN DEFAULT TRUE,
+  can_view_all_tickets BOOLEAN DEFAULT FALSE,
+  can_reply BOOLEAN DEFAULT TRUE,
+  can_assign BOOLEAN DEFAULT FALSE,
+  can_change_status BOOLEAN DEFAULT TRUE,
+  can_add_internal_notes BOOLEAN DEFAULT TRUE,
+  can_delete_tickets BOOLEAN DEFAULT FALSE,
   permissions JSONB DEFAULT '[]'::jsonb,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS public.support_notifications (
   id TEXT PRIMARY KEY,
   user_id TEXT,
   staff_id TEXT,
+  recipient_type TEXT DEFAULT 'staff',
+  recipient_id TEXT,
   type TEXT,
   title TEXT,
   message TEXT,
@@ -274,6 +291,7 @@ CREATE TABLE IF NOT EXISTS public.ticket_history (
   action TEXT,
   actor_id TEXT,
   actor_name TEXT,
+  actor_role TEXT,
   details TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -283,30 +301,51 @@ CREATE TABLE IF NOT EXISTS public.ticket_history (
 -- =============================================
 CREATE TABLE IF NOT EXISTS public.user_wallets (
   user_id TEXT PRIMARY KEY,
+  username TEXT,
+  email TEXT,
   balance NUMERIC(12,2) DEFAULT 0,
   total_credited NUMERIC(12,2) DEFAULT 0,
   total_spent NUMERIC(12,2) DEFAULT 0,
+  total_credits_added NUMERIC(12,2) DEFAULT 0,
+  total_credits_spent NUMERIC(12,2) DEFAULT 0,
+  total_refunds NUMERIC(12,2) DEFAULT 0,
+  total_promotional_credits NUMERIC(12,2) DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS public.wallet_transactions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
+  transaction_ref TEXT,
   type TEXT NOT NULL,
   amount NUMERIC(12,2) NOT NULL,
+  previous_balance NUMERIC(12,2),
   balance_after NUMERIC(12,2),
+  updated_balance NUMERIC(12,2),
   description TEXT,
   related_order_id TEXT,
+  payment_id TEXT,
   status TEXT DEFAULT 'successful',
+  admin_id TEXT,
+  admin_name TEXT,
+  reason TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS public.wallet_recharges (
   id TEXT PRIMARY KEY,
+  recharge_ref TEXT,
   user_id TEXT NOT NULL,
+  username TEXT,
+  email TEXT,
   amount NUMERIC(12,2) NOT NULL,
+  credits NUMERIC(12,2),
+  payment_method TEXT,
+  payment_gateway TEXT,
   gateway_order_id TEXT,
   gateway_payment_id TEXT,
+  payment_id TEXT,
   status TEXT DEFAULT 'pending',
   failure_reason TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -357,11 +396,14 @@ CREATE TABLE IF NOT EXISTS public.payment_refunds (
 
 CREATE TABLE IF NOT EXISTS public.orders (
   id TEXT PRIMARY KEY,
+  order_number TEXT,
   user_id TEXT,
   username TEXT,
   email TEXT,
+  ign TEXT,
   items JSONB DEFAULT '[]'::jsonb,
   total_amount NUMERIC(12,2),
+  currency TEXT DEFAULT 'INR',
   wallet_used NUMERIC(12,2),
   online_paid NUMERIC(12,2),
   payment_type TEXT,
@@ -384,14 +426,27 @@ CREATE TABLE IF NOT EXISTS public.wallet_coupons (
   start_date TEXT,
   expiry_date TEXT,
   status TEXT DEFAULT 'active',
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  description TEXT,
+  created_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS public.wallet_coupon_redemptions (
   id TEXT PRIMARY KEY,
   coupon_id TEXT NOT NULL,
+  coupon_code TEXT,
   user_id TEXT NOT NULL,
+  username TEXT,
+  user_email TEXT,
+  wallet_id TEXT,
+  wallet_transaction_id TEXT,
   amount NUMERIC(12,2),
+  reward_amount NUMERIC(12,2),
+  previous_balance NUMERIC(12,2),
+  new_balance NUMERIC(12,2),
+  status TEXT DEFAULT 'successful',
+  error_message TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -412,22 +467,38 @@ CREATE TABLE IF NOT EXISTS public.payment_gateway_config (
 CREATE TABLE IF NOT EXISTS public.donation_requests (
   id TEXT PRIMARY KEY,
   user_id TEXT,
+  reference_number TEXT,
   username TEXT,
+  edition TEXT,
   amount NUMERIC(12,2) NOT NULL,
   utr TEXT,
   screenshot_url TEXT,
+  message TEXT,
   status TEXT DEFAULT 'pending',
+  admin_remarks TEXT,
+  reward_id TEXT,
+  reward_name TEXT,
+  reward_category TEXT,
+  reward_status TEXT DEFAULT 'PENDING',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   verified_at TIMESTAMPTZ,
-  verified_by TEXT
+  verified_by TEXT,
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by TEXT
 );
 
 CREATE TABLE IF NOT EXISTS public.donation_rewards (
   id TEXT PRIMARY KEY,
   min_amount NUMERIC(12,2),
   reward_description TEXT,
+  name TEXT,
+  description TEXT,
+  category TEXT,
+  badge_label TEXT,
   enabled BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  display_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS public.donation_settings (
@@ -450,6 +521,7 @@ CREATE TABLE IF NOT EXISTS public.donation_audit_logs (
   id TEXT PRIMARY KEY,
   action TEXT,
   actor TEXT,
+  target_id TEXT,
   details TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -527,20 +599,20 @@ ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 
 -- Profiles: users can read/update their own
-CREATE POLICY "Users can view own profile" ON public.profiles
+CREATE POLICY IF NOT EXISTS "Users can view own profile" ON public.profiles
   FOR SELECT USING (auth.uid() = id);
 
-CREATE POLICY "Users can update own profile" ON public.profiles
+CREATE POLICY IF NOT EXISTS "Users can update own profile" ON public.profiles
   FOR UPDATE USING (auth.uid() = id);
 
 -- Support tickets: users see own, staff see all (enforced also in backend)
-CREATE POLICY "Users view own tickets" ON public.support_tickets
+CREATE POLICY IF NOT EXISTS "Users view own tickets" ON public.support_tickets
   FOR SELECT USING (auth.uid()::text = user_id OR EXISTS (
     SELECT 1 FROM public.profiles WHERE id = auth.uid() AND (is_admin OR is_staff)
   ));
 
 -- Wallets: users see own
-CREATE POLICY "Users view own wallet" ON public.user_wallets
+CREATE POLICY IF NOT EXISTS "Users view own wallet" ON public.user_wallets
   FOR SELECT USING (auth.uid()::text = user_id);
 
 -- Note: Most write operations and admin access should go through the Express backend
@@ -557,10 +629,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS set_profiles_updated_at ON public.profiles;
 CREATE TRIGGER set_profiles_updated_at
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS set_store_config_updated_at ON public.store_config;
 CREATE TRIGGER set_store_config_updated_at
   BEFORE UPDATE ON public.store_config
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
@@ -589,6 +663,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();

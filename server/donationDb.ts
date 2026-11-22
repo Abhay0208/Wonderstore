@@ -169,6 +169,88 @@ function createInitialDb(): DonationsDbSchema {
 class DonationDatabase {
   private cache: DonationsDbSchema | null = null;
 
+  /** Hydrate cache from Supabase (source of truth). */
+  public async hydrateFromSupabase(): Promise<void> {
+    const admin = getSupabaseAdmin();
+    if (!admin) return;
+    try {
+      const [reqRes, settingsRes, rewardsRes, auditRes, manualLbRes] = await Promise.all([
+        admin.from('donation_requests').select('*'),
+        admin.from('donation_settings').select('*'),
+        admin.from('donation_rewards').select('*'),
+        admin.from('donation_audit_logs').select('*'),
+        admin.from('donation_manual_leaderboard').select('*'),
+      ]);
+      const firstError = [reqRes, settingsRes, rewardsRes, auditRes, manualLbRes].find((r) => r.error);
+      if (firstError?.error) throw firstError.error;
+
+      const hasData =
+        (reqRes.data?.length || 0) > 0 ||
+        (settingsRes.data?.length || 0) > 0 ||
+        (rewardsRes.data?.length || 0) > 0;
+      if (!hasData) return;
+
+      const settings = (settingsRes.data || [])[0];
+      const defaults = createDefaultDonationSettings();
+      this.cache = {
+        requests: (reqRes.data || []).map((r: any) => ({
+          id: r.id,
+          referenceNumber: r.reference_number,
+          username: r.username,
+          edition: r.edition,
+          amount: Number(r.amount) || 0,
+          utr: r.utr,
+          screenshotUrl: r.screenshot_url,
+          message: r.message,
+          status: r.status,
+          adminRemarks: r.admin_remarks,
+          rewardId: r.reward_id,
+          rewardName: r.reward_name,
+          rewardCategory: r.reward_category,
+          rewardStatus: r.reward_status,
+          createdAt: r.created_at,
+          reviewedAt: r.verified_at,
+          reviewedBy: r.verified_by,
+        })),
+        manual_leaderboard: (manualLbRes.data || []).map((m: any) => ({
+          id: m.id, username: m.username, edition: m.edition,
+          amount: Number(m.amount) || 0, badge: m.badge, avatarUrl: m.avatar_url,
+          period: m.period, position: m.position,
+          createdAt: m.created_at, updatedAt: m.updated_at,
+        })),
+        rewards: (rewardsRes.data || []).map((r: any) => ({
+          id: r.id, minAmount: Number(r.min_amount) || 0, name: r.name,
+          description: r.description, category: r.category, badgeLabel: r.badge_label,
+          enabled: r.enabled, displayOrder: r.display_order,
+          createdAt: r.created_at, updatedAt: r.updated_at,
+        })),
+        settings: settings
+          ? {
+              ...defaults,
+              enabled: settings.enabled,
+              leaderboardEnabled: settings.leaderboard_enabled,
+              rewardsEnabled: settings.rewards_enabled,
+              upiId: settings.upi_id,
+              upiPayeeName: settings.upi_payee_name,
+              qrMode: settings.qr_mode,
+              customQrUrl: settings.custom_qr_url,
+              instructions: settings.instructions,
+              minAmount: Number(settings.min_amount) || 0,
+              thankYouMessage: settings.thank_you_message,
+              rewardsBannerMessage: settings.rewards_banner_message,
+              updatedAt: settings.updated_at,
+            }
+          : defaults,
+        audit_logs: (auditRes.data || []).map((r: any) => ({
+          id: r.id, action: r.action, adminName: r.actor, targetId: r.target_id,
+          details: r.details, timestamp: r.created_at,
+        })),
+      } as DonationsDbSchema;
+    } catch (err: any) {
+      console.error('[donationDb] Supabase hydration failed, using local JSON:', err?.message || String(err));
+    }
+  }
+
   private load(): DonationsDbSchema {
     if (this.cache) return this.cache;
     ensureDataDir();
@@ -210,19 +292,83 @@ class DonationDatabase {
         admin.from('donation_requests').upsert(
           data.requests.map((r) => ({
             id: r.id,
-            user_id: r.userId,
+            user_id: (r as any).userId ?? null,
+            reference_number: r.referenceNumber,
             username: r.username,
+            edition: r.edition,
             amount: r.amount,
             utr: r.utr,
             screenshot_url: r.screenshotUrl,
+            message: r.message,
             status: r.status,
+            admin_remarks: r.adminRemarks,
+            reward_id: r.rewardId,
+            reward_name: r.rewardName,
+            reward_category: r.rewardCategory,
+            reward_status: r.rewardStatus,
             created_at: r.createdAt,
-            verified_at: r.verifiedAt,
-            verified_by: r.verifiedBy,
+            verified_at: r.reviewedAt,
+            verified_by: r.reviewedBy,
           })),
           { onConflict: 'id' }
         ).then(({ error }) => {
           if (error) console.error('[donationDb] requests upsert', error.message);
+        });
+      }
+
+      if (data.manual_leaderboard?.length) {
+        admin.from('donation_manual_leaderboard').upsert(
+          data.manual_leaderboard.map((m) => ({
+            id: m.id,
+            username: m.username,
+            edition: m.edition,
+            amount: m.amount,
+            badge: m.badge,
+            avatar_url: m.avatarUrl,
+            period: m.period,
+            position: m.position,
+            created_at: m.createdAt,
+            updated_at: m.updatedAt,
+          })),
+          { onConflict: 'id' }
+        ).then(({ error }) => {
+          if (error) console.error('[donationDb] manual leaderboard upsert', error.message);
+        });
+      }
+
+      if (data.rewards?.length) {
+        admin.from('donation_rewards').upsert(
+          data.rewards.map((r) => ({
+            id: r.id,
+            min_amount: r.minAmount,
+            name: r.name,
+            description: r.description,
+            category: r.category,
+            badge_label: r.badgeLabel,
+            enabled: r.enabled,
+            display_order: r.displayOrder,
+            created_at: r.createdAt,
+            updated_at: r.updatedAt,
+          })),
+          { onConflict: 'id' }
+        ).then(({ error }) => {
+          if (error) console.error('[donationDb] rewards upsert', error.message);
+        });
+      }
+
+      if (data.audit_logs?.length) {
+        admin.from('donation_audit_logs').upsert(
+          data.audit_logs.map((a) => ({
+            id: a.id,
+            action: a.action,
+            actor: a.adminName,
+            target_id: a.targetId,
+            details: a.details,
+            created_at: a.timestamp,
+          })),
+          { onConflict: 'id' }
+        ).then(({ error }) => {
+          if (error) console.error('[donationDb] audit upsert', error.message);
         });
       }
 
