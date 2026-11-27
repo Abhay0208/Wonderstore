@@ -23,8 +23,6 @@ import {
   Zap,
   Check,
   X,
-  Eye,
-  EyeOff,
 } from 'lucide-react';
 import { useTickets } from '../../context/TicketContext';
 import { useToast } from '../../context/ToastContext';
@@ -98,7 +96,6 @@ export const AdminTicketManagementTab: React.FC<AdminTicketManagementTabProps> =
 
   // Staff permissions modal / form
   const [editingStaff, setEditingStaff] = useState<Partial<SupportStaffPermission> | null>(null);
-  const [showPasskeys, setShowPasskeys] = useState<Record<string, boolean>>({});
 
   // Backend Discord config state (write-only for URL so raw secret is never returned/stored client-side)
   const [discordUrlInput, setDiscordUrlInput] = useState('');
@@ -838,10 +835,11 @@ export const AdminTicketManagementTab: React.FC<AdminTicketManagementTabProps> =
                 <div>
                   <label className="block text-xs font-bold text-foreground mb-1">Portal Passkey</label>
                   <input
-                    type="text"
+                    type="password"
+                    autoComplete="new-password"
                     value={editingStaff.passkey || ''}
                     onChange={(e) => setEditingStaff((p) => ({ ...p, passkey: e.target.value }))}
-                    placeholder="Leave blank to keep/auto-generate"
+                    placeholder="Set new passkey (12+ characters); blank keeps current"
                     className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-xs font-mono text-foreground outline-none focus:border-accent"
                   />
                 </div>
@@ -920,21 +918,6 @@ export const AdminTicketManagementTab: React.FC<AdminTicketManagementTabProps> =
                     {member.canAssign && <span>• Assign</span>}
                     {member.canDeleteTickets && <span>• Delete</span>}
                   </div>
-                  {member.passkey && (
-                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground">
-                      <span>Passkey:</span>
-                      <span>{showPasskeys[member.id] ? member.passkey : '••••••••'}</span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowPasskeys((prev) => ({ ...prev, [member.id]: !prev[member.id] }))
-                        }
-                        className="text-accent cursor-pointer"
-                      >
-                        {showPasskeys[member.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 <div className="flex items-center gap-2">

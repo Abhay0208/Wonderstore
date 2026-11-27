@@ -1,3 +1,5 @@
+import { doc, setDoc } from 'firebase/firestore';
+import { db, firebaseAuthInstance, handleFirestoreError, OperationType } from '../lib/firebase';
 import type {
   SupportTicket,
   SupportMessage,
@@ -9,7 +11,6 @@ import type {
   DiscordSupportConfigPublic,
   SupportTicketPriority,
   SupportTicketStatus,
-  SubAdminKey,
 } from '../types';
 
 export interface StaffPortalAuthResponse {
@@ -98,47 +99,35 @@ async function apiRequest<T>(
   return data as T;
 }
 
-// Persistence is handled by the Express backend writing to Supabase.
-// No direct client-side Firestore writes.
+// Mirror verified Firebase user writes safely into Firestore collections when online
+async function mirrorToFirestore(collectionName: string, docId: string, payload: Record<string, unknown>) {
+  if (!db || !firebaseAuthInstance?.currentUser?.emailVerified) return;
+  try {
+    const cleanPayload = Object.fromEntries(
+      Object.entries(payload).filter(([, v]) => v !== undefined)
+    );
+    await setDoc(doc(db, collectionName, docId), cleanPayload, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${docId}`);
+  }
+}
 
 export const supportService = {
-  async issueUserSession(user: { uid: string; email: string; displayName?: string | null }): Promise<string> {
+  async issueUserSession(_user: { uid: string; email: string; displayName?: string | null }): Promise<string> {
+    const firebaseUser = firebaseAuthInstance?.currentUser;
+    if (!firebaseUser) {
+      throw new Error('A verified Firebase account is required to use support tickets.');
+    }
+
+    const idToken = await firebaseUser.getIdToken();
     const res = await apiRequest<{ token: string }>('/api/support/auth/user-session', {
       method: 'POST',
-      body: JSON.stringify({
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName || user.email?.split('@')[0] || 'Player',
-      }),
+      body: JSON.stringify({ idToken }),
     });
     setStoredUserToken(res.token);
     return res.token;
   },
 
-  /** Owner credentials are verified exclusively on the backend. */
-  async loginOwner(passkey: string): Promise<StaffPortalAuthResponse> {
-    const res = await apiRequest<StaffPortalAuthResponse>('/api/admin/auth/owner-login', {
-      method: 'POST',
-      body: JSON.stringify({ passkey }),
-    });
-    setStoredStaffSession(res);
-    return res;
-  },
-
-  /** Sub-admin credentials are verified against Supabase password hashes on the backend. */
-  async loginSubAdmin(id: string, password: string): Promise<StaffPortalAuthResponse> {
-    const res = await apiRequest<StaffPortalAuthResponse>('/api/admin/auth/subadmin-login', {
-      method: 'POST',
-      body: JSON.stringify({ id, password }),
-    });
-    setStoredStaffSession(res);
-    return res;
-  },
-
-  /**
-   * Staff credentials are verified against Supabase passkey hashes on the backend.
-   * The frontend no longer sends sub-admin keys or any credential list to the server.
-   */
   async loginStaffPortal(passkey: string): Promise<StaffPortalAuthResponse> {
     const res = await apiRequest<StaffPortalAuthResponse>('/api/support/auth/staff-login', {
       method: 'POST',
@@ -181,7 +170,31 @@ export const supportService = {
       token
     );
 
-    // Persistence handled by backend → Supabase
+    // Sync to Firestore when Firebase user is authenticated
+    const t = res.ticket;
+    void mirrorToFirestore('support_tickets', t.id, {
+      id: t.id,
+      ticketNumber: t.ticketNumber,
+      userId: t.userId,
+      username: t.username,
+      userEmail: t.userEmail,
+      ign: t.ign,
+      category: t.category,
+      priority: t.priority,
+      subject: t.subject,
+      description: t.description,
+      status: t.status,
+      assignedStaffId: '',
+      assignedStaffName: '',
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+      lastReplyAt: t.lastReplyAt,
+      lastReplyByRole: t.lastReplyByRole,
+      unreadByUser: t.unreadByUser ?? 0,
+      unreadByStaff: t.unreadByStaff ?? 1,
+      ratingSubmitted: false,
+    });
+
     return res;
   },
 
@@ -207,6 +220,21 @@ export const supportService = {
       },
       token
     );
+
+    const m = res.message;
+    void mirrorToFirestore('support_messages', m.id, {
+      id: m.id,
+      ticketId: m.ticketId,
+      ticketOwnerId: m.ticketOwnerId,
+      senderId: m.senderId,
+      senderName: m.senderName,
+      senderRole: m.senderRole,
+      senderStaffTitle: m.senderStaffTitle,
+      message: m.message,
+      isInternal: m.isInternal,
+      attachmentIds: m.attachmentIds || [],
+      createdAt: m.createdAt,
+    });
 
     return res;
   },
@@ -262,6 +290,17 @@ export const supportService = {
       },
       token
     );
+    const r = res.rating;
+    void mirrorToFirestore('support_ratings', r.id, {
+      id: r.id,
+      ticketId: r.ticketId,
+      ticketNumber: r.ticketNumber,
+      userId: r.userId,
+      username: r.username,
+      stars: r.stars,
+      feedback: r.feedback,
+      createdAt: r.createdAt,
+    });
     return res.rating;
   },
 

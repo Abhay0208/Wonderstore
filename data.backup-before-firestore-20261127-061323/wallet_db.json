@@ -1,0 +1,24 @@
+{
+  "user_wallets": [
+    {
+      "userId": "d06d7279-9205-4675-93e1-24eb1599315e",
+      "username": "Abhay",
+      "email": "abhaykumarq7@gmail.com",
+      "balance": 0,
+      "totalCreditsAdded": 0,
+      "totalCreditsSpent": 0,
+      "totalRefunds": 0,
+      "totalPromotionalCredits": 0,
+      "createdAt": "2026-11-20T09:04:24.469Z",
+      "updatedAt": "2026-11-20T09:04:24.469Z"
+    }
+  ],
+  "wallet_transactions": [],
+  "wallet_recharges": [],
+  "payments": [],
+  "payment_refunds": [],
+  "orders": [],
+  "processedGatewayPaymentIds": [],
+  "wallet_coupons": [],
+  "wallet_coupon_redemptions": []
+}

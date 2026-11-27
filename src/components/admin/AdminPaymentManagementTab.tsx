@@ -389,7 +389,6 @@ export const AdminPaymentManagementTab: React.FC<AdminPaymentManagementTabProps>
                 className="rounded-xl border border-border bg-surface px-3 py-2 text-xs text-foreground outline-none"
               >
                 <option value="all">All Gateways</option>
-                <option value="razorpay">Razorpay / Online</option>
                 <option value="wallet">Wallet Internal</option>
                 <option value="wonderpay_upi_qr">WonderPay UPI QR</option>
               </select>

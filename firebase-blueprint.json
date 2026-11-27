@@ -1,0 +1,456 @@
+{
+  "entities": {
+    "TestConnection": {
+      "title": "TestConnection",
+      "description": "Read-only health check document used on client boot to verify Firestore connectivity.",
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Connectivity status string"
+        }
+      }
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated customer account profile synced on sign-in.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "photoURL": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "role": {
+          "type": "string",
+          "enum": ["player"]
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "role", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Authorized Firebase Admin registry document.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "name": { "type": "string", "maxLength": 80 },
+        "role": { "type": "string", "enum": ["admin", "owner"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "SupportStaffPermission": {
+      "title": "SupportStaffPermission",
+      "description": "Support staff permissions & role assignment managed by Admins.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 80 },
+        "roleTitle": { "type": "string", "maxLength": 60 },
+        "email": { "type": "string", "maxLength": 254 },
+        "active": { "type": "boolean" },
+        "canViewAllTickets": { "type": "boolean" },
+        "canReply": { "type": "boolean" },
+        "canAssign": { "type": "boolean" },
+        "canChangeStatus": { "type": "boolean" },
+        "canAddInternalNotes": { "type": "boolean" },
+        "canDeleteTickets": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "roleTitle", "active", "canReply"]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "Customer support ticket persisted in central support database.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ticketNumber": { "type": "string", "maxLength": 32 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 80 },
+        "userEmail": { "type": "string", "maxLength": 254 },
+        "ign": { "type": "string", "maxLength": 64 },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Technical Support",
+            "Payment & Billing",
+            "Minecraft Server Support",
+            "Account Issues",
+            "Bug Report",
+            "Other"
+          ]
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "urgent"]
+        },
+        "subject": { "type": "string", "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "status": {
+          "type": "string",
+          "enum": ["open", "in_progress", "waiting_for_user", "answered", "resolved", "closed"]
+        },
+        "assignedStaffId": { "type": "string", "maxLength": 128 },
+        "assignedStaffName": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "lastReplyAt": { "type": "string", "format": "date-time" },
+        "lastReplyByRole": { "type": "string", "enum": ["user", "staff", "admin", "system"] },
+        "unreadByUser": { "type": "integer", "minimum": 0 },
+        "unreadByStaff": { "type": "integer", "minimum": 0 },
+        "ratingSubmitted": { "type": "boolean" }
+      },
+      "required": [
+        "id",
+        "ticketNumber",
+        "userId",
+        "username",
+        "userEmail",
+        "category",
+        "priority",
+        "subject",
+        "description",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SupportMessage": {
+      "title": "SupportMessage",
+      "description": "Real-time conversation message or internal staff note tied to a support ticket.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ticketId": { "type": "string", "maxLength": 128 },
+        "ticketOwnerId": { "type": "string", "maxLength": 128 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 80 },
+        "senderRole": { "type": "string", "enum": ["user", "staff", "admin", "system"] },
+        "senderStaffTitle": { "type": "string", "maxLength": 64 },
+        "message": { "type": "string", "maxLength": 4000 },
+        "isInternal": { "type": "boolean" },
+        "attachmentIds": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "ticketId",
+        "ticketOwnerId",
+        "senderId",
+        "senderName",
+        "senderRole",
+        "message",
+        "isInternal",
+        "createdAt"
+      ]
+    },
+    "SupportAttachment": {
+      "title": "SupportAttachment",
+      "description": "Image or file attachment associated with a ticket or reply.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ticketId": { "type": "string", "maxLength": 128 },
+        "ticketOwnerId": { "type": "string", "maxLength": 128 },
+        "messageId": { "type": "string", "maxLength": 128 },
+        "uploaderId": { "type": "string", "maxLength": 128 },
+        "fileName": { "type": "string", "maxLength": 180 },
+        "mimeType": { "type": "string", "maxLength": 100 },
+        "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 5242880 },
+        "dataUrl": { "type": "string", "maxLength": 750000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ticketId", "ticketOwnerId", "uploaderId", "fileName", "mimeType", "sizeBytes", "dataUrl", "createdAt"]
+    },
+    "SupportStaffAssignment": {
+      "title": "SupportStaffAssignment",
+      "description": "Audit log and active record of ticket assignment to staff members.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ticketId": { "type": "string", "maxLength": 128 },
+        "staffId": { "type": "string", "maxLength": 128 },
+        "staffName": { "type": "string", "maxLength": 80 },
+        "staffRole": { "type": "string", "maxLength": 64 },
+        "assignedBy": { "type": "string", "maxLength": 80 },
+        "assignedAt": { "type": "string", "format": "date-time" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "ticketId", "staffId", "staffName", "staffRole", "assignedBy", "assignedAt", "active"]
+    },
+    "SupportNotification": {
+      "title": "SupportNotification",
+      "description": "In-website notifications for users, staff, and admins.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "recipientType": { "type": "string", "enum": ["user", "staff", "admin"] },
+        "recipientId": { "type": "string", "maxLength": 128 },
+        "ticketId": { "type": "string", "maxLength": 128 },
+        "ticketNumber": { "type": "string", "maxLength": 32 },
+        "type": {
+          "type": "string",
+          "enum": ["new_ticket", "staff_reply", "user_reply", "status_changed", "resolved", "closed", "assigned"]
+        },
+        "title": { "type": "string", "maxLength": 140 },
+        "body": { "type": "string", "maxLength": 400 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "recipientType", "recipientId", "ticketId", "ticketNumber", "type", "title", "body", "read", "createdAt"]
+    },
+    "SupportRating": {
+      "title": "SupportRating",
+      "description": "User 1-5 star support rating and feedback submitted once per resolved ticket.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ticketId": { "type": "string", "maxLength": 128 },
+        "ticketNumber": { "type": "string", "maxLength": 32 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 80 },
+        "stars": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "feedback": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ticketId", "ticketNumber", "userId", "username", "stars", "createdAt"]
+    },
+    "UserWallet": {
+      "title": "UserWallet",
+      "description": "User wallet balance summary (1 Credit = 1 INR), scoped strictly by userId.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "maxLength": 80 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "balance": { "type": "number", "minimum": 0 },
+        "totalCreditsAdded": { "type": "number", "minimum": 0 },
+        "totalCreditsSpent": { "type": "number", "minimum": 0 },
+        "totalRefunds": { "type": "number", "minimum": 0 },
+        "totalPromotionalCredits": { "type": "number", "minimum": 0 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "balance", "totalCreditsAdded", "totalCreditsSpent", "totalRefunds", "totalPromotionalCredits", "createdAt", "updatedAt"]
+    },
+    "WalletTransaction": {
+      "title": "WalletTransaction",
+      "description": "Immutable wallet credit/debit ledger transaction linked to a user wallet.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "transactionRef": { "type": "string", "maxLength": 64 },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": {
+          "type": "string",
+          "enum": ["wallet_recharge", "product_purchase", "refund", "admin_credit", "admin_debit", "promotional_credit"]
+        },
+        "amount": { "type": "number", "minimum": 0 },
+        "previousBalance": { "type": "number", "minimum": 0 },
+        "updatedBalance": { "type": "number", "minimum": 0 },
+        "description": { "type": "string", "maxLength": 400 },
+        "relatedOrderId": { "type": "string", "maxLength": 128 },
+        "paymentId": { "type": "string", "maxLength": 128 },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "processing", "successful", "failed", "cancelled", "refunded"]
+        },
+        "adminId": { "type": "string", "maxLength": 128 },
+        "reason": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "transactionRef", "userId", "type", "amount", "previousBalance", "updatedBalance", "description", "status", "createdAt"]
+    },
+    "WalletRecharge": {
+      "title": "WalletRecharge",
+      "description": "Gateway-verified wallet recharge attempt and settlement record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "rechargeRef": { "type": "string", "maxLength": 64 },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "maxLength": 80 },
+        "email": { "type": "string", "maxLength": 254 },
+        "amount": { "type": "number", "minimum": 1 },
+        "credits": { "type": "number", "minimum": 1 },
+        "paymentMethod": { "type": "string", "maxLength": 40 },
+        "paymentGateway": { "type": "string", "maxLength": 40 },
+        "gatewayOrderId": { "type": "string", "maxLength": 128 },
+        "gatewayPaymentId": { "type": "string", "maxLength": 128 },
+        "paymentId": { "type": "string", "maxLength": 128 },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "processing", "successful", "failed", "cancelled", "refunded"]
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "rechargeRef", "userId", "amount", "credits", "paymentMethod", "paymentGateway", "status", "createdAt", "updatedAt"]
+    },
+    "PaymentRecord": {
+      "title": "PaymentRecord",
+      "description": "Unified payment transaction record supporting direct, wallet, combined, recharge, and refund events.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "transactionId": { "type": "string", "maxLength": 128 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "maxLength": 80 },
+        "email": { "type": "string", "maxLength": 254 },
+        "productName": { "type": "string", "maxLength": 200 },
+        "amount": { "type": "number", "minimum": 0 },
+        "walletAmount": { "type": "number", "minimum": 0 },
+        "onlineAmount": { "type": "number", "minimum": 0 },
+        "onlineTransactionId": { "type": "string", "maxLength": 128 },
+        "paymentMethod": { "type": "string", "maxLength": 40 },
+        "paymentGateway": { "type": "string", "maxLength": 40 },
+        "paymentType": {
+          "type": "string",
+          "enum": ["wallet_recharge", "direct_product", "wallet_product", "combined", "refund"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "processing", "successful", "failed", "cancelled", "refunded", "partially_refunded"]
+        },
+        "gatewayReference": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "transactionId", "userId", "amount", "paymentMethod", "paymentGateway", "paymentType", "status", "createdAt", "updatedAt"]
+    },
+    "PaymentRefund": {
+      "title": "PaymentRefund",
+      "description": "Immutable refund record tracking wallet and online gateway refund components.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "refundRef": { "type": "string", "maxLength": 64 },
+        "paymentId": { "type": "string", "maxLength": 128 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "totalRefundAmount": { "type": "number", "minimum": 0 },
+        "walletRefundAmount": { "type": "number", "minimum": 0 },
+        "onlineRefundAmount": { "type": "number", "minimum": 0 },
+        "gatewayRefundId": { "type": "string", "maxLength": 128 },
+        "walletTransactionId": { "type": "string", "maxLength": 128 },
+        "reason": { "type": "string", "maxLength": 300 },
+        "adminId": { "type": "string", "maxLength": 128 },
+        "adminName": { "type": "string", "maxLength": 80 },
+        "status": { "type": "string", "enum": ["successful", "failed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "refundRef", "paymentId", "userId", "totalRefundAmount", "reason", "adminId", "status", "createdAt"]
+    },
+    "StoreSection": {
+      "title": "StoreSection",
+      "description": "Partitioned storefront data section.",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "type": "object" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["key", "value", "updatedAt"]
+    },
+    "GlobalStoreSnapshot": {
+      "title": "GlobalStoreSnapshot",
+      "description": "Legacy unified storefront state snapshot retained read-only for migration.",
+      "type": "object",
+      "properties": {
+        "_lastUpdated": { "type": "integer" }
+      }
+    }
+  },
+  "firestore": {
+    "/test/connection": {
+      "schema": { "$ref": "#/entities/TestConnection" },
+      "description": "Health-check document read once at boot to validate Firestore connectivity."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Customer profiles strictly scoped to the owning authenticated user."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Authorized storefront owner/admin accounts."
+    },
+    "/support_staff_permissions/{staffId}": {
+      "schema": { "$ref": "#/entities/SupportStaffPermission" },
+      "description": "Staff accounts & granular ticket permissions managed by Admins."
+    },
+    "/support_tickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/SupportTicket" },
+      "description": "Support tickets isolated by owner userId or authorized staff/admin."
+    },
+    "/support_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/SupportMessage" },
+      "description": "Ticket conversation messages; isInternal notes strictly hidden from users."
+    },
+    "/support_attachments/{attachmentId}": {
+      "schema": { "$ref": "#/entities/SupportAttachment" },
+      "description": "Ticket and reply image/file attachments scoped by ticketOwnerId and staff."
+    },
+    "/support_staff_assignments/{assignmentId}": {
+      "schema": { "$ref": "#/entities/SupportStaffAssignment" },
+      "description": "Assignment records linking tickets to staff members."
+    },
+    "/support_notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/SupportNotification" },
+      "description": "Real-time notifications scoped by recipientType and recipientId."
+    },
+    "/support_ratings/{ratingId}": {
+      "schema": { "$ref": "#/entities/SupportRating" },
+      "description": "1-5 star ratings for resolved tickets (1 rating per ticketId)."
+    },
+    "/user_wallets/{userId}": {
+      "schema": { "$ref": "#/entities/UserWallet" },
+      "description": "Per-user wallet balances strictly scoped to owning userId and admins."
+    },
+    "/wallet_transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/WalletTransaction" },
+      "description": "Immutable wallet transactions scoped to owning userId and admins."
+    },
+    "/wallet_recharges/{rechargeId}": {
+      "schema": { "$ref": "#/entities/WalletRecharge" },
+      "description": "Gateway-verified wallet recharges scoped to owning userId and admins."
+    },
+    "/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/PaymentRecord" },
+      "description": "Payment transaction ledger linked to orders and wallet recharges."
+    },
+    "/payment_refunds/{refundId}": {
+      "schema": { "$ref": "#/entities/PaymentRefund" },
+      "description": "Refund records tracking wallet and gateway refund transactions."
+    },
+    "/store_sections/{sectionId}": {
+      "schema": { "$ref": "#/entities/StoreSection" },
+      "description": "Partitioned storefront state documents."
+    },
+    "/store/global_state": {
+      "schema": { "$ref": "#/entities/GlobalStoreSnapshot" },
+      "description": "Legacy single-document storefront snapshot retained read-only."
+    }
+  }
+}

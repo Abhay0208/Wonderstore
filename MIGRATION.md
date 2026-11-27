@@ -1,102 +1,74 @@
-# WONDER MC – Migration from Firebase to Supabase
+# WonderMC Database & Authentication Status
 
-This document describes the completed migration of the WONDER MC storefront from Firebase Authentication + Firestore + local JSON/localStorage to **Supabase Authentication + PostgreSQL**.
+## Current verified architecture
 
-## What Changed
+This project currently has a mixed persistence architecture:
 
-- **Authentication**: Firebase Auth replaced with Supabase Auth (Google OAuth + email/password).
-- **Database**: All persistent data (tickets, wallets, payments, orders, donations, site config, etc.) now stored in Supabase PostgreSQL.
-- **Frontend persistence**: `localStorage` is retained only as a short-lived cache. Source of truth is the Express backend writing to Supabase.
-- **Removed**: `firebase` package, `firebase-applet-config.json`, `firebase-blueprint.json`, `firestore.rules`, Firestore error handlers, and all direct Firestore client writes.
-- **Added**: `@supabase/supabase-js`, `src/lib/supabase.ts`, `server/supabaseAdmin.ts`, `supabase/schema.sql`.
+- Firebase Authentication is used by the frontend for Google sign-in and optional email/password sign-in.
+- The frontend can write a verified user's profile to Firestore.
+- The Express backend's main support, wallet, donation, and site configuration modules still use local JSON files under `data/`.
+- `server/firebase.ts` initializes the Firebase Admin SDK for server-side token verification and future Firestore operations.
+- Supabase-related files are still present as legacy code. They are not the active source of truth for the main database modules.
 
-## Required Environment Variables
+**Firestore is not yet the source of truth for all application data.** Do not delete the local `data/` directory or assume that wallet, payment, donation, support-ticket, or site configuration records have been migrated.
 
-Copy `.env.example` to `.env` and fill in:
+## Firebase environment
 
-```
-VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+Create `.env.local` from `.env.example` and set the values from your Firebase project.
 
-SUPABASE_URL=https://YOUR-PROJECT.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-```
+Frontend Firebase Web SDK values:
 
-The **service role key must only be used on the server**. Never commit it or expose it to the browser.
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `VITE_FIREBASE_APP_ID`
+- `VITE_FIRESTORE_DATABASE_ID` (only if using a named Firestore database)
 
-## Supabase Project Setup
+Server-only Firebase Admin values:
 
-1. Create a new project at [https://supabase.com](https://supabase.com).
-2. Go to **SQL Editor** and paste the entire contents of `supabase/schema.sql`. Run it.
-3. Go to **Authentication → Providers → Google** and enable Google.
-   - Create OAuth credentials in Google Cloud Console.
-   - Add the authorized redirect URI: `https://YOUR-PROJECT.supabase.co/auth/v1/callback`
-   - Paste Client ID and Client Secret into Supabase.
-4. In **Authentication → URL Configuration**, add your site URL and redirect URLs (e.g. `http://localhost:3000`, your production domain).
-5. Copy the Project URL, anon key, and service role key into your `.env`.
+- `FIREBASE_PROJECT_ID`
+- `GOOGLE_APPLICATION_CREDENTIALS`
 
-## Google OAuth Setup
+Place the downloaded service-account JSON at the configured path. Keep it out of ZIP uploads, Git, and browser code.
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/).
-2. Create or select a project → **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
-3. Application type: **Web application**.
-4. Authorized redirect URIs:
-   - `https://YOUR-PROJECT.supabase.co/auth/v1/callback`
-5. Copy Client ID and Client Secret into Supabase Auth Google provider settings.
-6. Enable the Google provider in Supabase.
+Authentication secrets:
 
-## Backend Notes
+- `ADMIN_SECURITY_KEY` — owner passkey; use a strong unique value.
+- `SUPPORT_SESSION_SECRET` — at least 32 random bytes, stored only on the server.
 
-- The Express server (`server.ts` + `server/*Db.ts`) now writes to Supabase via the service role client when the environment variables are present.
-- Local JSON files in `data/` remain as an emergency fallback only.
-- Session tokens for support/admin continue to work as before; user identity now comes from Supabase Auth.
+Never expose these server secrets through variables prefixed with `VITE_`.
 
-## Frontend Notes
+## Authentication hardening included in this source
 
-- `src/lib/firebase.ts` still exists for import compatibility but now implements Supabase Auth.
-- Auth state, Google login, and email/password login go through Supabase.
-- Contexts (`StoreConfigContext`, `OrderContext`, `WalletContext`, `TicketContext`, etc.) continue to work; they load from backend APIs that persist to Supabase.
+- Staff passkeys are stored as salted scrypt hashes.
+- Legacy plaintext staff passkeys are invalidated and the affected staff account is disabled while its profile and permissions are retained.
+- The support database performs the credential migration during server startup.
+- Staff passkeys are never returned by the staff listing or save APIs.
+- A disabled staff account without a valid hash cannot be reactivated until a new passkey is set.
+- Staff login is rate-limited.
+- User support sessions must be minted from a verified Firebase ID token. A browser-supplied UID is not trusted.
+- Legacy local-fallback account passwords are migrated from plaintext to salted PBKDF2 hashes on the account's next successful login.
+- A corrupt support database is not silently replaced with an empty database.
 
-## Build & Test
+## Firestore migration still required
 
-```bash
-npm install
-npm run build
-npm start
-```
+The next database phase must migrate these backend JSON stores to Firestore:
 
-After setting environment variables:
+- `data/site_db.json`
+- `data/support_db.json`
+- `data/wallet_db.json`
+- `data/donations_db.json`
 
-- Test Google login and email/password registration/login.
-- Create a support ticket and verify it appears in the `support_tickets` table.
-- Perform a wallet recharge or order and verify rows in `user_wallets`, `payments`, `orders`.
-- Confirm admin/staff permissions still restrict sensitive endpoints.
+That migration must include:
 
-## Remaining Work / Recommendations
+1. A verified export/backup of each JSON database.
+2. A documented Firestore collection/document schema.
+3. A one-time import script with idempotent writes and validation.
+4. Backend read/write changes so Firestore becomes the source of truth.
+5. Server-side authorization for every read and write.
+6. Tests for ticket ownership, staff permissions, wallet balance integrity, payment idempotency, and donation records.
+7. A rollback procedure that preserves the original JSON files until production verification is complete.
 
-- Convert the large `*Db.ts` classes from synchronous in-memory + background upsert to fully async Supabase queries for better scalability.
-- Add more granular RLS policies if direct client access is expanded.
-- Remove the legacy local JSON fallback once Supabase is confirmed stable in production.
-- Rename `src/lib/firebase.ts` → `src/lib/auth.ts` and update imports when convenient.
-
-## Files Removed
-
-- `firebase-applet-config.json`
-- `firebase-blueprint.json`
-- `firestore.rules`
-- `.firestore_quota.json`
-- Firebase dependency and `@firebase/eslint-plugin-security-rules`
-
-## Files Added / Modified
-
-- `supabase/schema.sql` (new)
-- `src/lib/supabase.ts` (new)
-- `server/supabaseAdmin.ts` (new)
-- `src/lib/firebase.ts` (rewritten for Supabase Auth)
-- `server/siteDb.ts`, `server/supportDb.ts`, `server/walletDb.ts`, `server/donationDb.ts` (persistence updated)
-- `src/services/supportService.ts` (Firestore mirroring removed)
-- `package.json`, `.env.example`, `eslint.config.js`
-- `src/services/storageAdapter.ts` (comments updated)
-
-All existing UI, admin panel, wallet, support tickets, payments, donations, and store features remain intact.
+Do not treat a successful Firebase connection test as proof that the main application databases have migrated.

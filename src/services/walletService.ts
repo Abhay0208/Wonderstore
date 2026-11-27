@@ -386,11 +386,6 @@ export const walletService = {
   async updateAdminGatewaySettings(
     token: string,
     patch: {
-      razorpayEnabled?: boolean;
-      razorpayMode?: 'test' | 'live';
-      razorpayKeyId?: string;
-      razorpayKeySecret?: string;
-      razorpayWebhookSecret?: string;
       clearExternalKeys?: boolean;
       upiQrEnabled?: boolean;
       supportedMethods?: GatewayPaymentMethod[];

@@ -7,24 +7,23 @@ coverage/
 .env*
 !.env.example
 data/
+secrets/
+*service-account*.json
+.firestore_quota.json
+.playwright-cli/
+auth-backup-*/
+auth-emergency-backup-*/
+auth-data-backup/
+supabase/audit/
+server/razorpay_backup/
 
 # Environment secrets
 .env
 .env.*
 !.env.example
+!.env.sample
 
-# Dependencies
-node_modules/
-
-# Build files
-dist/
-build/
-
-# Logs
-*.log
-npm-debug.log*
-
-# Temporary files
-.DS_Store
-.idea/
-.vscode/
+# Firebase private credentials
+*service-account*.json
+firebase-adminsdk-*.json
+secrets/

@@ -583,14 +583,6 @@ export interface WalletOverviewStats {
 }
 
 export interface PaymentGatewayPublicConfig {
-  razorpayEnabled: boolean;
-  razorpayMode: 'test' | 'live';
-  razorpayConfiguredLive: boolean;
-  keyIdPreview: string;
-  razorpayPublicKeyId: string;
-  hasKeySecret: boolean;
-  webhookSecretSet: boolean;
-  webhookUrlPath: string;
   upiQrEnabled: boolean;
   supportedMethods: GatewayPaymentMethod[];
   connectionStatus: 'connected_live' | 'connected_test_sandbox' | 'disabled';
@@ -598,9 +590,7 @@ export interface PaymentGatewayPublicConfig {
 }
 
 export interface GatewayOrderChallenge {
-  gateway: 'razorpay';
-  mode: 'test' | 'live';
-  isExternalRazorpay: boolean;
+  mode: 'test';
   keyId: string;
   gatewayOrderId: string;
   amountInr: number;

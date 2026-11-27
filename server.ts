@@ -1,8 +1,6 @@
-import "dotenv/config";
 import express, { Request, Response, NextFunction } from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import crypto from "crypto";
 import { supportDb, SessionTokenPayload, RealtimeSupportEvent } from "./server/supportDb";
 import {
   getPublicDiscordConfig,
@@ -19,36 +17,10 @@ import {
 } from "./server/paymentGateway";
 import { siteDb } from "./server/siteDb";
 import { donationDb } from "./server/donationDb";
-import { getSupabaseAdmin } from "./server/supabaseAdmin";
-import {
-  verifySessionToken,
-  extractToken,
-  requireSupportSession,
-  requireStaffSession,
-  requirePermission,
-  requireOwnerOrAdmin,
-  hasPermission,
-  handleOwnerLogin,
-  handleSubAdminLogin,
-  handleStaffLogin,
-  upsertSubAdmin,
-  listSubAdmins,
-  deleteSubAdmin,
-  ALL_ADMIN_PERMISSIONS,
-  type AdminTabPermission,
-} from "./server/middleware/auth";
+import { verifyFirebaseIdToken } from "./server/firebase";
 
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
-
-// Render stability: never crash silently on async errors. Log safely (without
-// echoing secrets) and keep the process alive where possible.
-process.on("unhandledRejection", (reason: any) => {
-  console.error("[UnhandledRejection]", reason?.message || reason);
-});
-process.on("uncaughtException", (err: any) => {
-  console.error("[UncaughtException]", err?.message || err);
-});
+const PORT = 3000;
 
 interface RawBodyRequest extends Request {
   rawBody?: string;
@@ -63,12 +35,6 @@ app.use(
   })
 );
 
-// Global error handler: never leak stack traces or secrets to the client.
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error("[Server Error]", err?.message || err);
-  res.status(500).json({ error: "Internal server error." });
-});
-
 interface AuthenticatedRequest extends Request {
   supportSession?: SessionTokenPayload;
 }
@@ -79,132 +45,162 @@ function getAppOrigin(req: Request): string {
   return `${proto}://${host}`;
 }
 
-// ---------------------------------------------------------------------------
-// Rate limiter for login endpoints (simple in-memory, per IP)
-// ---------------------------------------------------------------------------
-interface RateEntry { count: number; first: number; blockedUntil: number }
-const loginAttempts = new Map<string, RateEntry>();
-const LOGIN_MAX_ATTEMPTS = 10;
-const LOGIN_WINDOW_MS = 60 * 1000;
-const LOGIN_BLOCK_MS = 15 * 60 * 1000;
+function extractToken(req: Request): string | undefined {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.slice(7).trim();
+  }
+  const qToken = req.query.token;
+  if (typeof qToken === "string" && qToken.trim()) {
+    return qToken.trim();
+  }
+  return undefined;
+}
 
-function loginRateLimit(req: Request, res: Response, next: NextFunction): void {
-  const ip = req.ip || req.connection?.remoteAddress || "unknown";
-  const now = Date.now();
-  const entry = loginAttempts.get(ip);
-  if (!entry) {
-    loginAttempts.set(ip, { count: 1, first: now, blockedUntil: 0 });
-    return next();
-  }
-  if (now < entry.blockedUntil) {
-    res.status(429).json({ error: "Too many login attempts. Please try again later." });
+function requireSupportSession(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const token = extractToken(req);
+  const verified = supportDb.verifySessionToken(token);
+  if (!verified) {
+    res.status(401).json({ error: "Unauthorized: valid support session token required." });
     return;
   }
-  if (now - entry.first > LOGIN_WINDOW_MS) {
-    entry.count = 1;
-    entry.first = now;
-    entry.blockedUntil = 0;
-    return next();
-  }
-  entry.count += 1;
-  if (entry.count > LOGIN_MAX_ATTEMPTS) {
-    entry.blockedUntil = now + LOGIN_BLOCK_MS;
-    res.status(429).json({ error: "Too many login attempts. Please try again later." });
-    return;
-  }
+  req.supportSession = verified;
   next();
 }
 
-// ---------------------------------------------------------------------------
-// Authentication routes (backend-verified only)
-// ---------------------------------------------------------------------------
-
-/** Owner login — verified against ADMIN_SECURITY_KEY env var only. */
-app.post("/api/admin/auth/owner-login", loginRateLimit, (req, res) => {
-  void handleOwnerLogin(req as any, res);
-});
-
-/** Sub-admin login — verified against Supabase subadmin_keys password hash. */
-app.post("/api/admin/auth/subadmin-login", loginRateLimit, (req, res) => {
-  void handleSubAdminLogin(req as any, res);
-});
-
-/** Staff login — verified against Supabase support_staff_permissions passkey hash. */
-app.post("/api/support/auth/staff-login", loginRateLimit, (req, res) => {
-  void handleStaffLogin(req as any, res);
-});
-
-/** Sub-admin account management (owner/admin only). */
-app.get("/api/admin/auth/subadmins", requireOwnerOrAdmin, async (req: AuthenticatedRequest, res) => {
-  const list = await listSubAdmins(req.supportSession);
-  res.json({ subadmins: list });
-});
-app.post("/api/admin/auth/subadmins", requireOwnerOrAdmin, async (req: AuthenticatedRequest, res) => {
+function requireStaffOrAdminSession(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const token = extractToken(req);
-  const verified = token ? verifySessionToken(token) : null;
-  if (!verified) {
-    res.status(401).json({ error: "Unauthorized." });
+  const verified = supportDb.verifySessionToken(token);
+  if (!verified || verified.kind !== "staff") {
+    res.status(403).json({ error: "Forbidden: staff or admin portal authentication required." });
     return;
   }
-  const result = await upsertSubAdmin(verified, req.body || {});
-  if ("status" in result) {
-    res.status(result.status).json({ error: result.error });
-    return;
-  }
-  res.json({ subadmin: result.record });
-});
-app.delete("/api/admin/auth/subadmins/:id", requireOwnerOrAdmin, async (req: AuthenticatedRequest, res) => {
-  const token = extractToken(req);
-  const verified = token ? verifySessionToken(token) : null;
-  if (!verified) {
-    res.status(401).json({ error: "Unauthorized." });
-    return;
-  }
-  const result = await deleteSubAdmin(verified, req.params.id);
-  if ("status" in result) {
-    res.status(result.status).json({ error: result.error });
-    return;
-  }
-  res.json({ ok: true });
-});
+  req.supportSession = verified;
+  next();
+}
 
-// Health check — verifies meaningful dependencies (Supabase reachable).
-app.get("/api/health", async (_req, res) => {
-  let supabaseOk = false;
-  let supabaseDetail = "";
-  try {
-    const admin = (await import("./server/supabaseAdmin")).getSupabaseAdmin();
-    if (admin) {
-      const { error } = await admin.from("store_config").select("id").limit(1);
-      supabaseOk = !error;
-      supabaseDetail = error ? error.message : "reachable";
-    } else {
-      supabaseDetail = "not configured";
+function requireAdminModule(
+  modulePerm:
+    | "wallet"
+    | "payment_management"
+    | "orders"
+    | "coupon_management"
+    | "donations"
+    | "categories"
+    | "themes"
+    | "click_animations"
+    | "settings"
+) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const token = extractToken(req);
+    const verified = token ? supportDb.verifySessionToken(token) : null;
+    if (!verified || verified.kind !== "staff") {
+      res.status(403).json({ error: "Forbidden: administrator authentication required." });
+      return;
     }
-  } catch (e: any) {
-    supabaseDetail = e?.message || String(e);
-  }
-  res.json({
-    ok: supabaseOk,
-    mode: "supabase-backend",
-    port: PORT,
-    dependencies: { supabase: supabaseOk ? "ok" : "error" },
-    supabaseDetail,
-  });
+    const allowed =
+      verified.isAdmin ||
+      (Array.isArray(verified.subPermissions) &&
+        (verified.subPermissions.includes(modulePerm) ||
+          (modulePerm === "coupon_management" && verified.subPermissions.includes("wallet")) ||
+          (modulePerm === "click_animations" && verified.subPermissions.includes("themes")) ||
+          (modulePerm === "themes" && verified.subPermissions.includes("click_animations")) ||
+          (modulePerm === "categories" && verified.subPermissions.includes("settings"))));
+    if (!allowed) {
+      res.status(403).json({
+        error: `Forbidden: you do not have permission to access ${modulePerm}.`,
+      });
+      return;
+    }
+    req.supportSession = verified;
+    next();
+  };
+}
+
+function canAdminModule(
+  session: SessionTokenPayload,
+  modulePerm: "wallet" | "payment_management" | "orders" | "coupon_management" | "donations"
+) {
+  return (
+    session.kind === "staff" &&
+    (session.isAdmin ||
+      (Array.isArray(session.subPermissions) &&
+        (session.subPermissions.includes(modulePerm) ||
+          (modulePerm === "coupon_management" && session.subPermissions.includes("wallet")))))
+  );
+}
+
+// Health check
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, mode: "hybrid-support-db" });
 });
+
+// Per-IP staff login throttle. Firebase user authentication has its own provider-side protections.
+interface StaffLoginAttempt {
+  count: number;
+  windowStartedAt: number;
+  blockedUntil: number;
+}
+const staffLoginAttempts = new Map<string, StaffLoginAttempt>();
+const STAFF_LOGIN_WINDOW_MS = 60_000;
+const STAFF_LOGIN_MAX_ATTEMPTS = 8;
+const STAFF_LOGIN_BLOCK_MS = 15 * 60_000;
+
+function rateLimitStaffLogin(req: Request, res: Response, next: NextFunction) {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  let entry = staffLoginAttempts.get(ip);
+
+  if (!entry || now - entry.windowStartedAt > STAFF_LOGIN_WINDOW_MS) {
+    entry = { count: 0, windowStartedAt: now, blockedUntil: 0 };
+    staffLoginAttempts.set(ip, entry);
+  }
+
+  if (entry.blockedUntil > now) {
+    res.setHeader('Retry-After', String(Math.ceil((entry.blockedUntil - now) / 1000)));
+    res.status(429).json({ error: 'Too many login attempts. Try again later.' });
+    return;
+  }
+
+  entry.count += 1;
+  if (entry.count > STAFF_LOGIN_MAX_ATTEMPTS) {
+    entry.blockedUntil = now + STAFF_LOGIN_BLOCK_MS;
+    res.setHeader('Retry-After', String(Math.ceil(STAFF_LOGIN_BLOCK_MS / 1000)));
+    res.status(429).json({ error: 'Too many login attempts. Try again later.' });
+    return;
+  }
+
+  // Bound memory if the endpoint is hit from many distinct addresses.
+  if (staffLoginAttempts.size > 10_000) {
+    for (const [key, value] of staffLoginAttempts) {
+      if (value.blockedUntil < now && now - value.windowStartedAt > STAFF_LOGIN_WINDOW_MS * 2) {
+        staffLoginAttempts.delete(key);
+      }
+    }
+  }
+
+  next();
+}
 
 // ==================== SUPPORT AUTHENTICATION ====================
-app.post("/api/support/auth/user-session", (req, res) => {
-  const { uid, email, displayName } = req.body || {};
-  if (!uid || typeof uid !== "string" || !uid.trim()) {
-    res.status(400).json({ error: "Valid user UID is required." });
+app.post("/api/support/auth/user-session", async (req, res) => {
+  const idToken = typeof req.body?.idToken === 'string' ? req.body.idToken.trim() : '';
+  if (!idToken || idToken.length > 12_000) {
+    res.status(401).json({ error: 'A valid Firebase sign-in token is required.' });
     return;
   }
-  const cleanUid = uid.trim().slice(0, 128);
-  const cleanEmail = typeof email === "string" ? email.trim().slice(0, 254) : "";
+
+  const firebaseUser = await verifyFirebaseIdToken(idToken);
+  if (!firebaseUser || !firebaseUser.uid || firebaseUser.email_verified !== true) {
+    res.status(401).json({ error: 'Firebase authentication is invalid or the email is not verified.' });
+    return;
+  }
+
+  const cleanUid = firebaseUser.uid.slice(0, 128);
+  const cleanEmail = typeof firebaseUser.email === 'string' ? firebaseUser.email.trim().slice(0, 254) : '';
   const cleanName =
-    (typeof displayName === "string" && displayName.trim()) ||
-    (cleanEmail ? cleanEmail.split("@")[0] : "Player");
+    (typeof firebaseUser.name === 'string' && firebaseUser.name.trim()) ||
+    (cleanEmail ? cleanEmail.split('@')[0] : 'Player');
 
   const token = supportDb.signSessionToken({
     kind: "user",
@@ -217,8 +213,18 @@ app.post("/api/support/auth/user-session", (req, res) => {
   res.json({ token, uid: cleanUid, name: cleanName, email: cleanEmail });
 });
 
-app.post("/api/support/auth/staff-login", loginRateLimit, (req, res) => {
-  void handleStaffLogin(req as any, res);
+app.post("/api/support/auth/staff-login", rateLimitStaffLogin, async (req, res) => {
+  try {
+    const { passkey } = req.body || {};
+    const result = await supportDb.authenticateStaffOrAdmin(passkey);
+    if (!result) {
+      res.status(401).json({ error: "Invalid staff or admin passkey." });
+      return;
+    }
+    res.json(result);
+  } catch {
+    res.status(500).json({ error: "Staff authentication could not be completed." });
+  }
 });
 
 // ==================== REAL-TIME SSE STREAM ====================
@@ -327,7 +333,7 @@ app.post(
 
 app.patch(
   "/api/support/tickets/:ticketId",
-  requireStaffSession,
+  requireStaffOrAdminSession,
   (req: AuthenticatedRequest, res: Response) => {
     const { status, priority, assignedStaffId } = req.body || {};
     const result = supportDb.updateTicketByStaff(req.params.ticketId, req.supportSession!, {
@@ -356,7 +362,7 @@ app.patch(
 
 app.delete(
   "/api/support/tickets/:ticketId",
-  requireStaffSession,
+  requireStaffOrAdminSession,
   (req: AuthenticatedRequest, res: Response) => {
     const result = supportDb.deleteTicket(req.params.ticketId, req.supportSession!);
     if ('error' in result) {
@@ -406,29 +412,37 @@ app.post(
 // ==================== STAFF PERMISSIONS MANAGEMENT ====================
 app.get(
   "/api/support/staff-members",
-  requireStaffSession,
+  requireStaffOrAdminSession,
   (req: AuthenticatedRequest, res: Response) => {
-    const staffMembers = supportDb.listStaffMembers(req.supportSession!.isAdmin);
+    if (!req.supportSession?.isAdmin) {
+      res.status(403).json({ error: 'Only the owner/admin can view staff account management.' });
+      return;
+    }
+    const staffMembers = supportDb.listStaffMembers();
     res.json({ staffMembers });
   }
 );
 
 app.post(
   "/api/support/staff-members",
-  requireStaffSession,
-  (req: AuthenticatedRequest, res: Response) => {
-    const result = supportDb.upsertStaffMember(req.supportSession!, req.body || {});
-    if ('error' in result) {
-      res.status(result.status).json({ error: result.error });
-      return;
+  requireStaffOrAdminSession,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const result = await supportDb.upsertStaffMember(req.supportSession!, req.body || {});
+      if ('error' in result) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      res.json({ member: result.member });
+    } catch {
+      res.status(500).json({ error: 'Staff account could not be saved.' });
     }
-    res.json({ member: result.member });
   }
 );
 
 app.delete(
   "/api/support/staff-members/:staffId",
-  requireStaffSession,
+  requireStaffOrAdminSession,
   (req: AuthenticatedRequest, res: Response) => {
     const result = supportDb.deleteStaffMember(req.supportSession!, req.params.staffId);
     if ('error' in result) {
@@ -442,7 +456,7 @@ app.delete(
 // ==================== DISCORD WEBHOOK CONFIG (BACKEND SECRET ONLY) ====================
 app.get(
   "/api/support/discord-config",
-  requireStaffSession,
+  requireStaffOrAdminSession,
   (_req: AuthenticatedRequest, res: Response) => {
     res.json({ config: getPublicDiscordConfig() });
   }
@@ -450,7 +464,7 @@ app.get(
 
 app.post(
   "/api/support/discord-config",
-  requireStaffSession,
+  requireStaffOrAdminSession,
   (req: AuthenticatedRequest, res: Response) => {
     if (!req.supportSession!.isAdmin) {
       res.status(403).json({ error: "Only Admins can update Discord webhook settings." });
@@ -467,7 +481,7 @@ app.post(
 
 app.post(
   "/api/support/discord-config/test",
-  requireStaffSession,
+  requireStaffOrAdminSession,
   async (req: AuthenticatedRequest, res: Response) => {
     if (!req.supportSession!.isAdmin) {
       res.status(403).json({ error: "Only Admins can test Discord webhook settings." });
@@ -737,24 +751,10 @@ app.post("/api/payments/manual-upi", (req, res) => {
   res.status(201).json(result);
 });
 
-app.post("/api/payments/razorpay/webhook", (req: RawBodyRequest, res: Response) => {
-  const sig = req.headers["x-razorpay-signature"];
-  const signatureHeader = Array.isArray(sig) ? sig[0] : sig;
-  const rawBody = req.rawBody || JSON.stringify(req.body || {});
-  const result = walletDb.handleRazorpayWebhook(rawBody, signatureHeader, req.body);
-  if (!result.ok) {
-    res.status(result.status).json({ error: result.error });
-    return;
-  }
-  res.json({ ok: true });
-});
-
 // ==================== ORDERS ENDPOINTS ====================
 app.get("/api/orders", requireSupportSession, (req: AuthenticatedRequest, res: Response) => {
   const session = req.supportSession!;
-  const isStaff = session.kind === "staff";
-  const canOrders = hasPermission(session, "orders") || hasPermission(session, "payment_management");
-  if (isStaff && !canOrders) {
+  if (session.kind === "staff" && !canAdminModule(session, "orders") && !canAdminModule(session, "payment_management")) {
     res.status(403).json({ error: "Forbidden: orders access requires Purchase/Payment permission." });
     return;
   }
@@ -762,7 +762,7 @@ app.get("/api/orders", requireSupportSession, (req: AuthenticatedRequest, res: R
   res.json({ orders });
 });
 
-app.patch("/api/admin/orders/:orderId", requirePermission("orders"), (req: AuthenticatedRequest, res: Response) => {
+app.patch("/api/admin/orders/:orderId", requireAdminModule("orders"), (req: AuthenticatedRequest, res: Response) => {
   const { status } = req.body || {};
   if (!["pending", "completed", "failed", "refunded"].includes(status)) {
     res.status(400).json({ error: "Invalid order status." });
@@ -776,7 +776,7 @@ app.patch("/api/admin/orders/:orderId", requirePermission("orders"), (req: Authe
   res.json({ order: updated });
 });
 
-app.delete("/api/admin/orders/:orderId", requirePermission("orders"), (req: AuthenticatedRequest, res: Response) => {
+app.delete("/api/admin/orders/:orderId", requireAdminModule("orders"), (req: AuthenticatedRequest, res: Response) => {
   const removed = walletDb.deleteOrderByAdmin(req.params.orderId);
   if (!removed) {
     res.status(404).json({ error: "Order not found." });
@@ -786,11 +786,11 @@ app.delete("/api/admin/orders/:orderId", requirePermission("orders"), (req: Auth
 });
 
 // ==================== ADMIN WALLET MANAGEMENT ====================
-app.get("/api/admin/wallets", requirePermission("wallet"), (_req: AuthenticatedRequest, res: Response) => {
+app.get("/api/admin/wallets", requireAdminModule("wallet"), (_req: AuthenticatedRequest, res: Response) => {
   res.json(walletDb.listAllWalletsForAdmin());
 });
 
-app.get("/api/admin/wallets/:userId", requirePermission("wallet"), (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/admin/wallets/:userId", requireAdminModule("wallet"), (req: AuthenticatedRequest, res: Response) => {
   const detail = walletDb.getWalletDetailForAdmin(req.params.userId);
   if (!detail) {
     res.status(404).json({ error: "User wallet not found." });
@@ -799,7 +799,7 @@ app.get("/api/admin/wallets/:userId", requirePermission("wallet"), (req: Authent
   res.json(detail);
 });
 
-app.post("/api/admin/wallets/adjust", requirePermission("wallet"), (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/admin/wallets/adjust", requireAdminModule("wallet"), (req: AuthenticatedRequest, res: Response) => {
   const { userId, action, amount, reason, username, email } = req.body || {};
   if (!["admin_credit", "admin_debit", "promotional_credit"].includes(action)) {
     res.status(400).json({ error: "Invalid wallet adjustment action." });
@@ -821,11 +821,11 @@ app.post("/api/admin/wallets/adjust", requirePermission("wallet"), (req: Authent
 });
 
 // ==================== ADMIN PAYMENT MANAGEMENT ====================
-app.get("/api/admin/payments", requirePermission("payment_management"), (_req: AuthenticatedRequest, res: Response) => {
+app.get("/api/admin/payments", requireAdminModule("payment_management"), (_req: AuthenticatedRequest, res: Response) => {
   res.json(walletDb.listAllPaymentsForAdmin());
 });
 
-app.get("/api/admin/payments/:paymentId", requirePermission("payment_management"), (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/admin/payments/:paymentId", requireAdminModule("payment_management"), (req: AuthenticatedRequest, res: Response) => {
   const detail = walletDb.getPaymentDetailForAdmin(req.params.paymentId);
   if (!detail) {
     res.status(404).json({ error: "Payment record not found." });
@@ -834,7 +834,7 @@ app.get("/api/admin/payments/:paymentId", requirePermission("payment_management"
   res.json(detail);
 });
 
-app.patch("/api/admin/payments/:paymentId/status", requirePermission("payment_management"), (req: AuthenticatedRequest, res: Response) => {
+app.patch("/api/admin/payments/:paymentId/status", requireAdminModule("payment_management"), (req: AuthenticatedRequest, res: Response) => {
   const { status, reason } = req.body || {};
   const result = walletDb.updatePaymentStatusByAdmin(req.params.paymentId, status, reason);
   if ("error" in result) {
@@ -844,7 +844,7 @@ app.patch("/api/admin/payments/:paymentId/status", requirePermission("payment_ma
   res.json(result);
 });
 
-app.post("/api/admin/payments/:paymentId/refund", requirePermission("payment_management"), async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/admin/payments/:paymentId/refund", requireAdminModule("payment_management"), async (req: AuthenticatedRequest, res: Response) => {
   const { reason } = req.body || {};
   const result = await walletDb.refundPaymentByAdmin(req.supportSession!, req.params.paymentId, reason);
   if ("error" in result) {
@@ -854,11 +854,11 @@ app.post("/api/admin/payments/:paymentId/refund", requirePermission("payment_man
   res.json(result);
 });
 
-app.get("/api/admin/gateway-settings", requirePermission("payment_management"), (_req: AuthenticatedRequest, res: Response) => {
+app.get("/api/admin/gateway-settings", requireAdminModule("payment_management"), (_req: AuthenticatedRequest, res: Response) => {
   res.json({ config: getPublicGatewayConfig() });
 });
 
-app.post("/api/admin/gateway-settings", requirePermission("payment_management"), (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/admin/gateway-settings", requireAdminModule("payment_management"), (req: AuthenticatedRequest, res: Response) => {
   if (!req.supportSession!.isAdmin) {
     res.status(403).json({ error: "Only Main Owner Admins can modify gateway secret settings." });
     return;
@@ -872,11 +872,11 @@ app.post("/api/admin/gateway-settings", requirePermission("payment_management"),
 });
 
 // ==================== ADMIN COUPON MANAGEMENT ====================
-app.get("/api/admin/coupons", requirePermission("coupon_management"), (_req: AuthenticatedRequest, res: Response) => {
+app.get("/api/admin/coupons", requireAdminModule("coupon_management"), (_req: AuthenticatedRequest, res: Response) => {
   res.json({ coupons: walletDb.listWalletCoupons() });
 });
 
-app.post("/api/admin/coupons", requirePermission("coupon_management"), (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/admin/coupons", requireAdminModule("coupon_management"), (req: AuthenticatedRequest, res: Response) => {
   try {
     const coupon = walletDb.createWalletCoupon(req.supportSession!, req.body || {});
     res.json({ coupon });
@@ -885,7 +885,7 @@ app.post("/api/admin/coupons", requirePermission("coupon_management"), (req: Aut
   }
 });
 
-app.patch("/api/admin/coupons/:couponId", requirePermission("coupon_management"), (req: AuthenticatedRequest, res: Response) => {
+app.patch("/api/admin/coupons/:couponId", requireAdminModule("coupon_management"), (req: AuthenticatedRequest, res: Response) => {
   try {
     const coupon = walletDb.updateWalletCoupon(req.supportSession!, req.params.couponId, req.body || {});
     res.json({ coupon });
@@ -894,7 +894,7 @@ app.patch("/api/admin/coupons/:couponId", requirePermission("coupon_management")
   }
 });
 
-app.delete("/api/admin/coupons/:couponId", requirePermission("coupon_management"), (req: AuthenticatedRequest, res: Response) => {
+app.delete("/api/admin/coupons/:couponId", requireAdminModule("coupon_management"), (req: AuthenticatedRequest, res: Response) => {
   try {
     walletDb.deleteWalletCoupon(req.supportSession!, req.params.couponId);
     res.json({ success: true, deletedId: req.params.couponId });
@@ -903,7 +903,7 @@ app.delete("/api/admin/coupons/:couponId", requirePermission("coupon_management"
   }
 });
 
-app.get("/api/admin/coupons/redemptions", requirePermission("coupon_management"), (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/admin/coupons/redemptions", requireAdminModule("coupon_management"), (req: AuthenticatedRequest, res: Response) => {
   const userId = typeof req.query.userId === "string" ? req.query.userId : undefined;
   const redemptions = walletDb.listWalletCouponRedemptions(userId);
   res.json({ redemptions });
@@ -915,7 +915,7 @@ app.get("/api/store-categories", (_req: Request, res: Response) => {
   res.json({ categories: siteDb.getStoreCategories() });
 });
 
-app.put("/api/admin/store-categories/sync", requirePermission("categories"), (req: AuthenticatedRequest, res: Response) => {
+app.put("/api/admin/store-categories/sync", requireAdminModule("categories"), (req: AuthenticatedRequest, res: Response) => {
   try {
     const list = req.body?.categories;
     const result = siteDb.syncStoreCategories(list);
@@ -948,11 +948,11 @@ app.post("/api/donations/submit", (req: Request, res: Response) => {
 });
 
 // Admin Donations, Leaderboard, Rewards & Settings
-app.get("/api/admin/donations/overview", requirePermission("donations"), (_req: AuthenticatedRequest, res: Response) => {
+app.get("/api/admin/donations/overview", requireAdminModule("donations"), (_req: AuthenticatedRequest, res: Response) => {
   res.json(donationDb.getAdminOverview());
 });
 
-app.post("/api/admin/donations/requests/:id/approve", requirePermission("donations"), (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/admin/donations/requests/:id/approve", requireAdminModule("donations"), (req: AuthenticatedRequest, res: Response) => {
   try {
     const updated = donationDb.approveDonationRequest(
       req.params.id,
@@ -965,7 +965,7 @@ app.post("/api/admin/donations/requests/:id/approve", requirePermission("donatio
   }
 });
 
-app.post("/api/admin/donations/requests/:id/reject", requirePermission("donations"), (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/admin/donations/requests/:id/reject", requireAdminModule("donations"), (req: AuthenticatedRequest, res: Response) => {
   try {
     const updated = donationDb.rejectDonationRequest(
       req.params.id,
@@ -978,7 +978,7 @@ app.post("/api/admin/donations/requests/:id/reject", requirePermission("donation
   }
 });
 
-app.post("/api/admin/donations/requests/:id/reward-status", requirePermission("donations"), (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/admin/donations/requests/:id/reward-status", requireAdminModule("donations"), (req: AuthenticatedRequest, res: Response) => {
   try {
     const updated = donationDb.updateDonationRewardStatus(
       req.params.id,
@@ -991,7 +991,7 @@ app.post("/api/admin/donations/requests/:id/reward-status", requirePermission("d
   }
 });
 
-app.delete("/api/admin/donations/requests/:id", requirePermission("donations"), (req: AuthenticatedRequest, res: Response) => {
+app.delete("/api/admin/donations/requests/:id", requireAdminModule("donations"), (req: AuthenticatedRequest, res: Response) => {
   const removed = donationDb.deleteDonationRequest(req.params.id, req.supportSession?.name);
   if (!removed) {
     res.status(404).json({ error: "Donation request not found." });
@@ -1000,7 +1000,7 @@ app.delete("/api/admin/donations/requests/:id", requirePermission("donations"), 
   res.json({ success: true });
 });
 
-app.post("/api/admin/donations/leaderboard", requirePermission("donations"), (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/admin/donations/leaderboard", requireAdminModule("donations"), (req: AuthenticatedRequest, res: Response) => {
   try {
     const entry = donationDb.saveManualLeaderboardEntry(req.body || {}, req.supportSession?.name);
     res.json({ entry });
@@ -1009,7 +1009,7 @@ app.post("/api/admin/donations/leaderboard", requirePermission("donations"), (re
   }
 });
 
-app.delete("/api/admin/donations/leaderboard/:id", requirePermission("donations"), (req: AuthenticatedRequest, res: Response) => {
+app.delete("/api/admin/donations/leaderboard/:id", requireAdminModule("donations"), (req: AuthenticatedRequest, res: Response) => {
   const removed = donationDb.deleteManualLeaderboardEntry(req.params.id, req.supportSession?.name);
   if (!removed) {
     res.status(404).json({ error: "Leaderboard entry not found." });
@@ -1018,7 +1018,7 @@ app.delete("/api/admin/donations/leaderboard/:id", requirePermission("donations"
   res.json({ success: true });
 });
 
-app.post("/api/admin/donations/leaderboard/reorder", requirePermission("donations"), (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/admin/donations/leaderboard/reorder", requireAdminModule("donations"), (req: AuthenticatedRequest, res: Response) => {
   const { orderedIds } = req.body || {};
   if (!Array.isArray(orderedIds)) {
     res.status(400).json({ error: "orderedIds array is required." });
@@ -1028,7 +1028,7 @@ app.post("/api/admin/donations/leaderboard/reorder", requirePermission("donation
   res.json({ leaderboard });
 });
 
-app.post("/api/admin/donations/rewards", requirePermission("donations"), (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/admin/donations/rewards", requireAdminModule("donations"), (req: AuthenticatedRequest, res: Response) => {
   try {
     const reward = donationDb.saveRewardTier(req.body || {}, req.supportSession?.name);
     res.json({ reward });
@@ -1037,7 +1037,7 @@ app.post("/api/admin/donations/rewards", requirePermission("donations"), (req: A
   }
 });
 
-app.delete("/api/admin/donations/rewards/:id", requirePermission("donations"), (req: AuthenticatedRequest, res: Response) => {
+app.delete("/api/admin/donations/rewards/:id", requireAdminModule("donations"), (req: AuthenticatedRequest, res: Response) => {
   const removed = donationDb.deleteRewardTier(req.params.id, req.supportSession?.name);
   if (!removed) {
     res.status(404).json({ error: "Reward tier not found." });
@@ -1046,7 +1046,7 @@ app.delete("/api/admin/donations/rewards/:id", requirePermission("donations"), (
   res.json({ success: true });
 });
 
-app.put("/api/admin/donations/settings", requirePermission("donations"), (req: AuthenticatedRequest, res: Response) => {
+app.put("/api/admin/donations/settings", requireAdminModule("donations"), (req: AuthenticatedRequest, res: Response) => {
   try {
     const settings = donationDb.updateSettings(req.body || {}, req.supportSession?.name);
     res.json({ settings });
@@ -1059,7 +1059,7 @@ app.get("/api/theme-settings", (_req: Request, res: Response) => {
   res.json({ settings: siteDb.getThemeSettings() });
 });
 
-app.get("/api/admin/theme-settings", requirePermission("themes"), (_req: AuthenticatedRequest, res: Response) => {
+app.get("/api/admin/theme-settings", requireAdminModule("themes"), (_req: AuthenticatedRequest, res: Response) => {
   res.json({ settings: siteDb.getThemeSettings() });
 });
 
@@ -1071,14 +1071,14 @@ const handleUpdateThemeSettings = (req: AuthenticatedRequest, res: Response) => 
     res.status(400).json({ error: err.message || "Failed to update theme settings." });
   }
 };
-app.put("/api/admin/theme-settings", requirePermission("themes"), handleUpdateThemeSettings);
-app.post("/api/admin/theme-settings", requirePermission("themes"), handleUpdateThemeSettings);
+app.put("/api/admin/theme-settings", requireAdminModule("themes"), handleUpdateThemeSettings);
+app.post("/api/admin/theme-settings", requireAdminModule("themes"), handleUpdateThemeSettings);
 
 app.get("/api/click-animations", (_req: Request, res: Response) => {
   res.json({ animations: siteDb.getClickAnimations() });
 });
 
-app.get("/api/admin/click-animations", requirePermission("click_animations"), (_req: AuthenticatedRequest, res: Response) => {
+app.get("/api/admin/click-animations", requireAdminModule("click_animations"), (_req: AuthenticatedRequest, res: Response) => {
   res.json({ animations: siteDb.getClickAnimations() });
 });
 
@@ -1090,8 +1090,8 @@ const handleUpdateClickAnimations = (req: AuthenticatedRequest, res: Response) =
     res.status(400).json({ error: err.message || "Failed to update click animations." });
   }
 };
-app.put("/api/admin/click-animations", requirePermission("click_animations"), handleUpdateClickAnimations);
-app.post("/api/admin/click-animations", requirePermission("click_animations"), handleUpdateClickAnimations);
+app.put("/api/admin/click-animations", requireAdminModule("click_animations"), handleUpdateClickAnimations);
+app.post("/api/admin/click-animations", requireAdminModule("click_animations"), handleUpdateClickAnimations);
 
 const handleUpdateFloatingEmojis = (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -1101,8 +1101,8 @@ const handleUpdateFloatingEmojis = (req: AuthenticatedRequest, res: Response) =>
     res.status(400).json({ error: err.message || "Failed to update floating emojis." });
   }
 };
-app.put("/api/admin/floating-emojis", requirePermission("click_animations"), handleUpdateFloatingEmojis);
-app.post("/api/admin/floating-emojis", requirePermission("click_animations"), handleUpdateFloatingEmojis);
+app.put("/api/admin/floating-emojis", requireAdminModule("click_animations"), handleUpdateFloatingEmojis);
+app.post("/api/admin/floating-emojis", requireAdminModule("click_animations"), handleUpdateFloatingEmojis);
 
 app.get("/api/gamemode-visuals", (_req: Request, res: Response) => {
   res.json({ visuals: siteDb.getGamemodeVisuals() });
@@ -1116,517 +1116,14 @@ const handleUpdateGamemodeVisuals = (req: AuthenticatedRequest, res: Response) =
     res.status(400).json({ error: err.message || "Failed to update gamemode visuals." });
   }
 };
-app.put("/api/admin/gamemode-visuals", requirePermission("categories"), handleUpdateGamemodeVisuals);
-app.post("/api/admin/gamemode-visuals", requirePermission("categories"), handleUpdateGamemodeVisuals);
-
-// ============================================================================
-// SHARED STORE DATA — Supabase-backed CRUD
-// All writes use the service-role client (trusted backend) and are awaited.
-// Application authorization is enforced via requirePermission before any
-// protected record is touched.
-// ============================================================================
-
-async function adminClient() {
-  const admin = getSupabaseAdmin();
-  if (!admin) throw new Error("Supabase is not configured on the backend.");
-  return admin;
-}
-
-// ---- Store Config ----
-app.get("/api/store/config", async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("store_config").select("*").limit(1);
-    if (error) throw error;
-    res.json({ config: (data || [])[0] || null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read store config." });
-  }
-});
-
-app.put("/api/store/config", requirePermission("settings"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const patch = { ...(req.body || {}), updated_at: new Date().toISOString() };
-    const { data, error } = await admin.from("store_config").upsert({ id: "default", ...patch }, { onConflict: "id" });
-    if (error) throw error;
-    res.json({ config: ((data as any[] | null) ?? [])[0] ?? null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to update store config." });
-  }
-});
-
-// Generic full-list sync helper: replaces a table's contents, but NEVER when
-// the incoming list is empty (prevents empty browser storage from wiping data).
-async function syncList(
-  table: string,
-  rows: any[],
-  toDb: (row: any) => any
-): Promise<{ ok: boolean; error?: string }> {
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return { ok: false, error: "Refusing to sync an empty list (would erase existing data)." };
-  }
-  const admin = await adminClient();
-  const mapped = rows.map(toDb);
-  // Authoritative full-list sync: insert/upsert the incoming set first, then
-  // remove rows that are no longer present. Upsert-first reduces the window in
-  // which data is absent.
-  const { error } = await admin.from(table).upsert(mapped, { onConflict: "id" });
-  if (error) return { ok: false, error: error.message };
-  const keepIds = mapped.map((r) => r.id).filter(Boolean);
-  if (keepIds.length) {
-    const { error: delError } = await admin.from(table).delete().not("id", "in", `(${keepIds.map((i) => `"${String(i).replace(/"/g, "")}"`).join(",")})`);
-    if (delError) return { ok: false, error: delError.message };
-  }
-  return { ok: true };
-}
-
-app.put("/api/store/items/sync", requirePermission("products"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const result = await syncList("store_items", req.body?.items || [], (i) => ({
-      id: i.id,
-      title: i.title,
-      category: i.category,
-      price: Number(i.price) || 0,
-      description: i.description,
-      image_url: i.image_url,
-      display_order: i.display_order ?? 0,
-      discount_percent: i.discount_percent ?? 0,
-    }));
-    if (!result.ok) return res.status(400).json({ error: result.error });
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to sync items." });
-  }
-});
-
-app.put("/api/store/staff/sync", requirePermission("staff"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const result = await syncList("staff_members", req.body?.staff || [], (s) => ({
-      id: s.id, name: s.name, role: s.role, avatar_url: s.avatar_url,
-      description: s.description, discord_id: s.discord_id,
-      discord_username: s.discord_username, discord_url: s.discord_url,
-    }));
-    if (!result.ok) return res.status(400).json({ error: result.error });
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to sync staff." });
-  }
-});
-
-app.put("/api/store/leaderboard/sync", requirePermission("supporters"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const result = await syncList("leaderboard", req.body?.leaderboard || [], (l) => ({
-      id: l.id, username: l.username, total_spent: Number(l.total_spent) || 0,
-      rank: l.rank ?? null, updated_at: new Date().toISOString(),
-    }));
-    if (!result.ok) return res.status(400).json({ error: result.error });
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to sync leaderboard." });
-  }
-});
-
-app.put("/api/store/updates/sync", requirePermission("updates"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const result = await syncList("server_updates", req.body?.updates || [], (u) => ({
-      id: u.id, title: u.title, content: u.content, image_url: u.imageUrl,
-      image_urls: u.imageUrls ?? [], author: u.author, tag: u.tag,
-      pinned: u.pinned ?? false, created_at: u.createdAt ?? new Date().toISOString(),
-    }));
-    if (!result.ok) return res.status(400).json({ error: result.error });
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to sync updates." });
-  }
-});
-
-// ---- Store Items (Products) ----
-app.get("/api/store/items", async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("store_items").select("*").order("display_order", { ascending: true });
-    if (error) throw error;
-    res.json({ items: data || [] });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read store items." });
-  }
-});
-
-app.post("/api/store/items", requirePermission("products"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const item = { ...(req.body || {}), created_at: new Date().toISOString() };
-    const { data, error } = await admin.from("store_items").insert(item).select();
-    if (error) throw error;
-    res.status(201).json({ item: ((data as any[] | null) ?? [])[0] ?? null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to create store item." });
-  }
-});
-
-app.put("/api/store/items/:id", requirePermission("products"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("store_items").update(req.body || {}).eq("id", req.params.id).select();
-    if (error) throw error;
-    if (!data || data.length === 0) return res.status(404).json({ error: "Item not found." });
-    res.json({ item: data[0] });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to update store item." });
-  }
-});
-
-app.delete("/api/store/items/:id", requirePermission("products"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const { error } = await admin.from("store_items").delete().eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to delete store item." });
-  }
-});
-
-// ---- Store Coupons (public-facing promo coupons) ----
-app.get("/api/store/coupons", async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("coupons").select("*").order("created_at", { ascending: false });
-    if (error) throw error;
-    res.json({ coupons: data || [] });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read coupons." });
-  }
-});
-
-app.post("/api/store/coupons", requirePermission("discounts"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const coupon = { ...(req.body || {}), created_at: new Date().toISOString() };
-    const { data, error } = await admin.from("coupons").insert(coupon).select();
-    if (error) throw error;
-    res.status(201).json({ coupon: ((data as any[] | null) ?? [])[0] ?? null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to create coupon." });
-  }
-});
-
-app.delete("/api/store/coupons/:code", requirePermission("discounts"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const { error } = await admin.from("coupons").delete().eq("code", req.params.code);
-    if (error) throw error;
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to delete coupon." });
-  }
-});
-
-// ---- Leaderboard ----
-app.get("/api/store/leaderboard", async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("leaderboard").select("*").order("total_spent", { ascending: false });
-    if (error) throw error;
-    res.json({ leaderboard: data || [] });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read leaderboard." });
-  }
-});
-
-app.post("/api/store/leaderboard", requirePermission("supporters"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const entry = { ...(req.body || {}), updated_at: new Date().toISOString() };
-    const { data, error } = await admin.from("leaderboard").upsert(entry, { onConflict: "id" });
-    if (error) throw error;
-    res.json({ entry: ((data as any[] | null) ?? [])[0] ?? null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to save leaderboard entry." });
-  }
-});
-
-app.delete("/api/store/leaderboard/:id", requirePermission("supporters"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const { error } = await admin.from("leaderboard").delete().eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to delete leaderboard entry." });
-  }
-});
-
-// ---- Store Staff ----
-app.get("/api/store/staff", async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("staff_members").select("*").order("created_at", { ascending: true });
-    if (error) throw error;
-    res.json({ staff: data || [] });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read store staff." });
-  }
-});
-
-app.post("/api/store/staff", requirePermission("staff"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const staff = { ...(req.body || {}), created_at: new Date().toISOString() };
-    const { data, error } = await admin.from("staff_members").upsert(staff, { onConflict: "id" });
-    if (error) throw error;
-    res.json({ staff: ((data as any[] | null) ?? [])[0] ?? null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to save store staff." });
-  }
-});
-
-app.delete("/api/store/staff/:id", requirePermission("staff"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const { error } = await admin.from("staff_members").delete().eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to delete store staff." });
-  }
-});
-
-// ---- Activity Logs ----
-app.get("/api/store/activity-logs", requirePermission("activity_log"), async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("activity_logs").select("*").order("timestamp", { ascending: false }).limit(200);
-    if (error) throw error;
-    res.json({ logs: data || [] });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read activity logs." });
-  }
-});
-
-app.post("/api/store/activity-logs", requirePermission("activity_log"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const log = {
-      id: `log-${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
-      action: (req.body || {}).action,
-      admin_name: (req.body || {}).adminName || "Admin",
-      details: (req.body || {}).details,
-      timestamp: new Date().toISOString(),
-      type: (req.body || {}).type,
-    };
-    const { error } = await admin.from("activity_logs").insert(log);
-    if (error) throw error;
-    res.status(201).json({ log });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to write activity log." });
-  }
-});
-
-// ---- Server Updates ----
-app.get("/api/store/updates", async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("server_updates").select("*").order("created_at", { ascending: false });
-    if (error) throw error;
-    res.json({ updates: data || [] });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read updates." });
-  }
-});
-
-app.post("/api/store/updates", requirePermission("updates"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const update = { ...(req.body || {}), created_at: new Date().toISOString() };
-    const { data, error } = await admin.from("server_updates").upsert(update, { onConflict: "id" });
-    if (error) throw error;
-    res.json({ update: ((data as any[] | null) ?? [])[0] ?? null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to save update." });
-  }
-});
-
-app.delete("/api/store/updates/:id", requirePermission("updates"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const { error } = await admin.from("server_updates").delete().eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to delete update." });
-  }
-});
-
-// ---- Vote Links ----
-app.get("/api/store/vote-links", async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("vote_links").select("*").order("display_order", { ascending: true });
-    if (error) throw error;
-    res.json({ voteLinks: data || [] });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read vote links." });
-  }
-});
-
-app.post("/api/store/vote-links", requirePermission("vote"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const link = { ...(req.body || {}), created_at: new Date().toISOString() };
-    const { data, error } = await admin.from("vote_links").upsert(link, { onConflict: "id" });
-    if (error) throw error;
-    res.json({ link: ((data as any[] | null) ?? [])[0] ?? null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to save vote link." });
-  }
-});
-
-app.delete("/api/store/vote-links/:id", requirePermission("vote"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const { error } = await admin.from("vote_links").delete().eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to delete vote link." });
-  }
-});
-
-// ---- Rules ----
-app.get("/api/store/rules", async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("rules_categories").select("*").order("display_order", { ascending: true });
-    if (error) throw error;
-    res.json({ rules: data || [] });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read rules." });
-  }
-});
-
-app.post("/api/store/rules", requirePermission("rules"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const rule = { ...(req.body || {}), created_at: new Date().toISOString() };
-    const { data, error } = await admin.from("rules_categories").upsert(rule, { onConflict: "id" });
-    if (error) throw error;
-    res.json({ rule: ((data as any[] | null) ?? [])[0] ?? null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to save rules." });
-  }
-});
-
-app.delete("/api/store/rules/:id", requirePermission("rules"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const { error } = await admin.from("rules_categories").delete().eq("id", req.params.id);
-    if (error) throw error;
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to delete rules." });
-  }
-});
-
-// ---- Connection Guide ----
-app.get("/api/store/connection-guide", async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("connection_guide").select("*").limit(1);
-    if (error) throw error;
-    res.json({ guide: (data || [])[0] || null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read connection guide." });
-  }
-});
-
-app.put("/api/store/connection-guide", requirePermission("guide"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const patch = { ...(req.body || {}), id: "default", updated_at: new Date().toISOString() };
-    const { data, error } = await admin.from("connection_guide").upsert(patch, { onConflict: "id" });
-    if (error) throw error;
-    res.json({ guide: ((data as any[] | null) ?? [])[0] ?? null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to update connection guide." });
-  }
-});
-
-// ---- Sale Config ----
-app.get("/api/store/sale-config", async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("sale_config").select("*").limit(1);
-    if (error) throw error;
-    res.json({ saleConfig: (data || [])[0] || null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read sale config." });
-  }
-});
-
-app.put("/api/store/sale-config", requirePermission("discounts"), async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const patch = { ...(req.body || {}), id: "default", updated_at: new Date().toISOString() };
-    const { data, error } = await admin.from("sale_config").upsert(patch, { onConflict: "id" });
-    if (error) throw error;
-    res.json({ saleConfig: ((data as any[] | null) ?? [])[0] ?? null });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to update sale config." });
-  }
-});
-
-// ---- Payment Gateway Config (protected — owner/admin only for writes) ----
-app.get("/api/admin/gateway-config", requirePermission("payment_management"), async (_req, res) => {
-  try {
-    const admin = await adminClient();
-    const { data, error } = await admin.from("payment_gateway_config").select("*").limit(1);
-    if (error) throw error;
-    const row = (data || [])[0] || null;
-    // Return only public-safe fields; never return the key secret.
-    const publicRow = row
-      ? {
-          id: row.id,
-          razorpay_enabled: row.razorpay_enabled,
-          razorpay_mode: row.razorpay_mode,
-          razorpay_key_id: row.razorpay_key_id,
-          webhook_secret_set: Boolean(row.webhook_secret),
-          upi_qr_enabled: row.upi_qr_enabled,
-          updated_at: row.updated_at,
-        }
-      : null;
-    res.json({ config: publicRow });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to read gateway config." });
-  }
-});
-
-app.post("/api/admin/gateway-config", requireOwnerOrAdmin, async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await adminClient();
-    const patch = { ...(req.body || {}), id: "default", updated_at: new Date().toISOString() };
-    const { data, error } = await admin.from("payment_gateway_config").upsert(patch, { onConflict: "id" });
-    if (error) throw error;
-    const row = ((data as any[] | null) ?? [])[0] ?? null;
-    const publicRow = row
-      ? {
-          id: row.id,
-          razorpay_enabled: row.razorpay_enabled,
-          razorpay_mode: row.razorpay_mode,
-          razorpay_key_id: row.razorpay_key_id,
-          webhook_secret_set: Boolean(row.webhook_secret),
-          upi_qr_enabled: row.upi_qr_enabled,
-          updated_at: row.updated_at,
-        }
-      : null;
-    res.json({ config: publicRow });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to update gateway config." });
-  }
-});
+app.put("/api/admin/gamemode-visuals", requireAdminModule("categories"), handleUpdateGamemodeVisuals);
+app.post("/api/admin/gamemode-visuals", requireAdminModule("categories"), handleUpdateGamemodeVisuals);
 
 async function startServer() {
+  // Run credential migration and validate the support database before accepting traffic.
+  // A corrupt database must stop startup rather than being silently replaced.
+  supportDb.read();
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1641,27 +1138,9 @@ async function startServer() {
     });
   }
 
-  // Load all shared data from Supabase into the in-memory caches before
-  // accepting requests, so every instance serves the same central data and
-  // data survives restarts / Render redeployments.
-  try {
-    await Promise.all([
-      supportDb.readAsync(),
-      walletDb.readAsync(),
-      siteDb.hydrateFromSupabase(),
-      donationDb.hydrateFromSupabase(),
-    ]);
-    console.log("[startup] Supabase caches hydrated for support, wallet, site and donation data");
-  } catch (err: any) {
-    console.warn("[startup] Supabase cache hydration failed; will fall back to local JSON:", err?.message || String(err));
-  }
-
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT} (Supabase-backed storefront)`);
+    console.log(`Server running on http://0.0.0.0:${PORT} (Hybrid Support Ticket DB + Storefront)`);
   });
 }
 
-startServer().catch((err) => {
-  console.error("Failed to start server:", err);
-  process.exit(1);
-});
+startServer();

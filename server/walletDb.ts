@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { EventEmitter } from 'events';
-import { getSupabaseAdmin } from './supabaseAdmin';
 import type {
   GatewayPaymentMethod,
   Order,
@@ -42,7 +41,6 @@ import {
   executeGatewayRefund,
   getPublicGatewayConfig,
   verifyGatewaySignature,
-  verifyRazorpayWebhookSignature,
 } from './paymentGateway';
 import type { SessionTokenPayload } from './supportDb';
 
@@ -111,144 +109,12 @@ class WalletDatabase {
     }
   }
 
-  // Supabase row → internal type mappers
-  private mapWallet(r: any): UserWallet {
-    return {
-      userId: r.user_id, username: r.username, email: r.email,
-      balance: Number(r.balance) || 0,
-      totalCreditsAdded: Number(r.total_credits_added ?? r.total_credited) || 0,
-      totalCreditsSpent: Number(r.total_credits_spent ?? r.total_spent) || 0,
-      totalRefunds: Number(r.total_refunds) || 0,
-      totalPromotionalCredits: Number(r.total_promotional_credits) || 0,
-      createdAt: r.created_at, updatedAt: r.updated_at,
-    } as UserWallet;
-  }
-  private mapTx(r: any): WalletTransaction {
-    return {
-      id: r.id, transactionRef: r.transaction_ref, userId: r.user_id,
-      type: r.type, amount: Number(r.amount) || 0,
-      previousBalance: Number(r.previous_balance) || 0,
-      updatedBalance: Number(r.updated_balance ?? r.balance_after) || 0,
-      description: r.description, relatedOrderId: r.related_order_id,
-      paymentId: r.payment_id, status: r.status, adminId: r.admin_id,
-      adminName: r.admin_name, reason: r.reason, createdAt: r.created_at,
-    } as WalletTransaction;
-  }
-  private mapRecharge(r: any): WalletRecharge {
-    return {
-      id: r.id, rechargeRef: r.recharge_ref ?? r.id, userId: r.user_id,
-      username: r.username, email: r.email, amount: Number(r.amount) || 0,
-      credits: Number(r.credits ?? r.amount), paymentMethod: r.payment_method,
-      paymentGateway: r.payment_gateway, gatewayOrderId: r.gateway_order_id,
-      gatewayPaymentId: r.gateway_payment_id, paymentId: r.payment_id,
-      status: r.status, failureReason: r.failure_reason,
-      createdAt: r.created_at, updatedAt: r.updated_at,
-    } as WalletRecharge;
-  }
-  private mapPayment(r: any): PaymentRecord {
-    return {
-      id: r.id, transactionId: r.transaction_id, orderId: r.order_id,
-      userId: r.user_id, username: r.username, email: r.email,
-      productName: r.product_name, amount: Number(r.amount) || 0,
-      walletAmount: r.wallet_amount, onlineAmount: r.online_amount,
-      onlineTransactionId: r.online_transaction_id, paymentMethod: r.payment_method,
-      paymentGateway: r.payment_gateway, paymentType: r.payment_type,
-      status: r.status, gatewayOrderId: r.gateway_order_id,
-      gatewayReference: r.gateway_reference, verifiedByBackend: r.verified_by_backend,
-      failureReason: r.failure_reason, createdAt: r.created_at, updatedAt: r.updated_at,
-    } as PaymentRecord;
-  }
-  private mapRefund(r: any): PaymentRefund {
-    return {
-      id: r.id, refundRef: r.refund_ref, paymentId: r.payment_id, orderId: r.order_id,
-      userId: r.user_id, totalRefundAmount: r.total_refund_amount,
-      walletRefundAmount: r.wallet_refund_amount, onlineRefundAmount: r.online_refund_amount,
-      gatewayRefundId: r.gateway_refund_id, walletTransactionId: r.wallet_transaction_id,
-      reason: r.reason, adminId: r.admin_id, adminName: r.admin_name,
-      status: r.status, createdAt: r.created_at,
-    } as PaymentRefund;
-  }
-  private mapOrder(r: any): Order {
-    return {
-      id: r.id, orderNumber: r.order_number, ign: r.ign, userId: r.user_id,
-      username: r.username, email: r.email, items: r.items ?? [],
-      totalAmount: Number(r.total_amount) || 0, currency: r.currency ?? 'INR',
-      status: r.status, paymentMethod: r.payment_method, paymentGateway: r.payment_gateway,
-      paymentType: r.payment_type, paymentId: r.payment_id,
-      walletUsed: r.wallet_used, onlinePaid: r.online_paid, utr: r.utr,
-      screenshotUrl: r.screenshot_url, edition: r.edition, createdAt: r.created_at,
-    } as Order;
-  }
-  private mapCoupon(r: any): WalletCoupon {
-    return {
-      id: r.id, code: r.code, rewardAmount: Number(r.reward_amount) || 0,
-      couponType: r.coupon_type, totalLimit: r.total_limit, perUserLimit: r.per_user_limit,
-      redeemedCount: r.redeemed_count ?? 0, startDate: r.start_date, expiryDate: r.expiry_date,
-      status: r.status, description: r.description, createdBy: r.created_by,
-      createdAt: r.created_at, updatedAt: r.updated_at,
-    } as WalletCoupon;
-  }
-  private mapRedemption(r: any): WalletCouponRedemption {
-    return {
-      id: r.id, couponId: r.coupon_id, couponCode: r.coupon_code,
-      userId: r.user_id, username: r.username, userEmail: r.user_email,
-      walletId: r.wallet_id, walletTransactionId: r.wallet_transaction_id,
-      rewardAmount: Number(r.reward_amount) || 0,
-      previousBalance: Number(r.previous_balance) || 0,
-      newBalance: Number(r.new_balance) || 0, status: r.status,
-      errorMessage: r.error_message, createdAt: r.created_at,
-    } as WalletCouponRedemption;
-  }
-
-  /** Load all wallet/payment tables from Supabase into the in-memory cache. */
-  public async readAsync(): Promise<WalletDbSchema> {
-    if (this.cache) return this.cache;
-    const admin = getSupabaseAdmin();
-    if (admin) {
-      try {
-        const [wallets, tx, recharges, payments, refunds, orders, coupons, redemptions] = await Promise.all([
-          admin.from('user_wallets').select('*'),
-          admin.from('wallet_transactions').select('*'),
-          admin.from('wallet_recharges').select('*'),
-          admin.from('payments').select('*'),
-          admin.from('payment_refunds').select('*'),
-          admin.from('orders').select('*'),
-          admin.from('wallet_coupons').select('*'),
-          admin.from('wallet_coupon_redemptions').select('*'),
-        ]);
-        const firstError = [wallets, tx, recharges, payments, refunds, orders, coupons, redemptions].find((r) => r.error);
-        if (firstError?.error) throw firstError.error;
-        const hydrated: WalletDbSchema = {
-          user_wallets: (wallets.data || []).map(this.mapWallet),
-          wallet_transactions: (tx.data || []).map(this.mapTx),
-          wallet_recharges: (recharges.data || []).map(this.mapRecharge),
-          payments: (payments.data || []).map(this.mapPayment),
-          payment_refunds: (refunds.data || []).map(this.mapRefund),
-          orders: (orders.data || []).map(this.mapOrder),
-          processedGatewayPaymentIds: [],
-          wallet_coupons: (coupons.data || []).map(this.mapCoupon),
-          wallet_coupon_redemptions: (redemptions.data || []).map(this.mapRedemption),
-        };
-        // Rebuild the processed-gateway-id set from successful payments so that
-        // idempotency survives a restart (prevents double-crediting).
-        hydrated.processedGatewayPaymentIds = (payments.data || [])
-          .filter((p: any) => p.status === 'successful' && p.online_transaction_id)
-          .map((p: any) => String(p.online_transaction_id));
-        this.cache = hydrated;
-        return hydrated;
-      } catch (err: any) {
-        console.error('[walletDb] Supabase read failed, falling back to local JSON:', err?.message || String(err));
-      }
-    }
-    return this.readSync();
-  }
-
-  public readSync(): WalletDbSchema {
+  public read(): WalletDbSchema {
     if (this.cache) return this.cache;
     this.ensureDir();
     if (!fs.existsSync(DB_FILE)) {
       const initial = createEmptyDb();
-      this.cache = initial;
+      this.write(initial);
       return initial;
     }
     try {
@@ -256,142 +122,36 @@ class WalletDatabase {
       const parsed = JSON.parse(raw) as Partial<WalletDbSchema>;
       const hydrated: WalletDbSchema = {
         user_wallets: Array.isArray(parsed.user_wallets) ? parsed.user_wallets : [],
-        wallet_transactions: Array.isArray(parsed.wallet_transactions) ? parsed.wallet_transactions : [],
+        wallet_transactions: Array.isArray(parsed.wallet_transactions)
+          ? parsed.wallet_transactions
+          : [],
         wallet_recharges: Array.isArray(parsed.wallet_recharges) ? parsed.wallet_recharges : [],
         payments: Array.isArray(parsed.payments) ? parsed.payments : [],
         payment_refunds: Array.isArray(parsed.payment_refunds) ? parsed.payment_refunds : [],
         orders: Array.isArray(parsed.orders) ? parsed.orders : [],
-        processedGatewayPaymentIds: Array.isArray(parsed.processedGatewayPaymentIds) ? parsed.processedGatewayPaymentIds : [],
+        processedGatewayPaymentIds: Array.isArray(parsed.processedGatewayPaymentIds)
+          ? parsed.processedGatewayPaymentIds
+          : [],
         wallet_coupons: Array.isArray(parsed.wallet_coupons) ? parsed.wallet_coupons : [],
-        wallet_coupon_redemptions: Array.isArray(parsed.wallet_coupon_redemptions) ? parsed.wallet_coupon_redemptions : [],
+        wallet_coupon_redemptions: Array.isArray(parsed.wallet_coupon_redemptions)
+          ? parsed.wallet_coupon_redemptions
+          : [],
       };
       this.cache = hydrated;
       return hydrated;
     } catch {
       const initial = createEmptyDb();
-      this.cache = initial;
+      this.write(initial);
       return initial;
     }
   }
 
   private write(db: WalletDbSchema): void {
+    this.ensureDir();
     this.cache = db;
-
-    const admin = getSupabaseAdmin();
-    if (admin) {
-      if (db.user_wallets?.length) {
-        admin.from('user_wallets').upsert(
-          db.user_wallets.map((w) => ({
-            user_id: w.userId,
-            username: w.username,
-            email: w.email,
-            balance: w.balance,
-            total_credited: w.totalCreditsAdded ?? 0,
-            total_spent: w.totalCreditsSpent ?? 0,
-            total_credits_added: w.totalCreditsAdded ?? 0,
-            total_credits_spent: w.totalCreditsSpent ?? 0,
-            total_refunds: w.totalRefunds ?? 0,
-            total_promotional_credits: w.totalPromotionalCredits ?? 0,
-            created_at: w.createdAt,
-            updated_at: new Date().toISOString(),
-          })),
-          { onConflict: 'user_id' }
-        ).then(({ error }) => {
-          if (error) console.error('[walletDb] wallets upsert', error.message);
-        });
-      }
-
-      if (db.wallet_transactions?.length) {
-        admin.from('wallet_transactions').upsert(
-          db.wallet_transactions.map((tx) => ({
-            id: tx.id,
-            user_id: tx.userId,
-            transaction_ref: tx.transactionRef,
-            type: tx.type,
-            amount: tx.amount,
-            previous_balance: tx.previousBalance,
-            balance_after: tx.updatedBalance,
-            updated_balance: tx.updatedBalance,
-            description: tx.description,
-            related_order_id: tx.relatedOrderId,
-            payment_id: tx.paymentId,
-            status: tx.status,
-            admin_id: tx.adminId,
-            admin_name: tx.adminName,
-            reason: tx.reason,
-            created_at: tx.createdAt,
-          })),
-          { onConflict: 'id' }
-        ).then(({ error }) => {
-          if (error) console.error('[walletDb] tx upsert', error.message);
-        });
-      }
-
-      if (db.payments?.length) {
-        admin.from('payments').upsert(
-          db.payments.map((p) => ({
-            id: p.id,
-            transaction_id: p.transactionId,
-            order_id: p.orderId,
-            user_id: p.userId,
-            username: p.username,
-            email: p.email,
-            product_name: p.productName,
-            amount: p.amount,
-            wallet_amount: p.walletAmount,
-            online_amount: p.onlineAmount,
-            online_transaction_id: p.onlineTransactionId,
-            payment_method: p.paymentMethod,
-            payment_gateway: p.paymentGateway,
-            payment_type: p.paymentType,
-            status: p.status,
-            gateway_order_id: p.gatewayOrderId,
-            gateway_reference: p.gatewayReference,
-            verified_by_backend: p.verifiedByBackend,
-            failure_reason: p.failureReason,
-            created_at: p.createdAt,
-            updated_at: p.updatedAt,
-          })),
-          { onConflict: 'id' }
-        ).then(({ error }) => {
-          if (error) console.error('[walletDb] payments upsert', error.message);
-        });
-      }
-
-      if (db.orders?.length) {
-        admin.from('orders').upsert(
-          db.orders.map((o) => ({
-            id: o.id,
-            user_id: o.userId,
-            username: o.username,
-            email: o.email,
-            items: o.items ?? [],
-            total_amount: o.totalAmount,
-            wallet_used: o.walletUsed,
-            online_paid: o.onlinePaid,
-            payment_type: o.paymentType,
-            payment_id: o.paymentId,
-            status: o.status,
-            utr: o.utr,
-            screenshot_url: o.screenshotUrl,
-            edition: o.edition,
-            created_at: o.createdAt,
-          })),
-          { onConflict: 'id' }
-        ).then(({ error }) => {
-          if (error) console.error('[walletDb] orders upsert', error.message);
-        });
-      }
-    }
-
-    try {
-      this.ensureDir();
-      const tmpFile = `${DB_FILE}.tmp`;
-      fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2), 'utf-8');
-      fs.renameSync(tmpFile, DB_FILE);
-    } catch {
-      // ignore
-    }
+    const tmpFile = `${DB_FILE}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2), 'utf-8');
+    fs.renameSync(tmpFile, DB_FILE);
   }
 
   public resetCacheFromDisk(): void {
@@ -448,7 +208,7 @@ class WalletDatabase {
     payments: PaymentRecord[];
     gatewayConfig: PaymentGatewayPublicConfig;
   } {
-    const db = this.readSync();
+    const db = this.read();
     const existed = db.user_wallets.some((w) => w.userId === session.uid);
     const wallet = this.getOrCreateWallet(db, session.uid, session.name, session.email);
     if (!existed) {
@@ -487,7 +247,7 @@ class WalletDatabase {
       return { error: validation.error || 'Invalid recharge amount.', status: 400 as const };
     }
 
-    const db = this.readSync();
+    const db = this.read();
     const wallet = this.getOrCreateWallet(db, session.uid, session.name, session.email);
     const rechargeId = genId('RCH');
     const paymentId = genId('PAY');
@@ -520,7 +280,7 @@ class WalletDatabase {
       amount: validation.amount,
       credits: validation.amount, // 1 Wallet Credit = ₹1 INR
       paymentMethod: method,
-      paymentGateway: 'razorpay',
+      paymentGateway: 'upi',
       gatewayOrderId: gwOrder.challenge.gatewayOrderId,
       paymentId,
       status: 'pending',
@@ -539,7 +299,7 @@ class WalletDatabase {
       walletAmount: 0,
       onlineAmount: validation.amount,
       paymentMethod: method,
-      paymentGateway: 'razorpay',
+      paymentGateway: 'upi',
       paymentType: 'wallet_recharge',
       status: 'pending',
       gatewayOrderId: gwOrder.challenge.gatewayOrderId,
@@ -571,7 +331,7 @@ class WalletDatabase {
       paymentMethod?: string;
     }
   ) {
-    const db = this.readSync();
+    const db = this.read();
     const recharge = db.wallet_recharges.find(
       (r) => r.id === input.rechargeId && r.userId === session.uid
     );
@@ -678,7 +438,7 @@ class WalletDatabase {
     session: SessionTokenPayload,
     input: { rechargeId: string; reason?: string; cancelled?: boolean }
   ) {
-    const db = this.readSync();
+    const db = this.read();
     const recharge = db.wallet_recharges.find(
       (r) => r.id === input.rechargeId && r.userId === session.uid
     );
@@ -746,7 +506,7 @@ class WalletDatabase {
       return { error: 'Valid UTR / Reference ID is required.', status: 400 as const };
     }
 
-    const db = this.readSync();
+    const db = this.read();
     const wallet = this.getOrCreateWallet(db, session.uid, session.name, session.email);
     const rechargeId = genId('RCH');
     const paymentId = genId('PAY');
@@ -822,7 +582,7 @@ class WalletDatabase {
       return { error: 'Order items cannot be empty.', status: 400 as const };
     }
 
-    const db = this.readSync();
+    const db = this.read();
     const wallet = this.getOrCreateWallet(db, session.uid, session.name, session.email);
     const breakdown = calculateCombinedCheckoutBreakdown(
       input.totalAmount,
@@ -944,7 +704,7 @@ class WalletDatabase {
       return { error: 'Order items cannot be empty.', status: 400 as const };
     }
 
-    const db = this.readSync();
+    const db = this.read();
     const wallet = this.getOrCreateWallet(db, session.uid, session.name, session.email);
     const breakdown = calculateCombinedCheckoutBreakdown(
       input.totalAmount,
@@ -1015,7 +775,7 @@ class WalletDatabase {
       currency: 'INR',
       status: 'pending',
       paymentMethod: input.mode === 'combined' ? `wallet+${method}` : method,
-      paymentGateway: 'razorpay',
+      paymentGateway: 'upi',
       paymentType,
       paymentId,
       walletUsed: breakdown.walletUsed,
@@ -1036,7 +796,7 @@ class WalletDatabase {
       walletAmount: breakdown.walletUsed,
       onlineAmount: breakdown.onlineDue,
       paymentMethod: input.mode === 'combined' ? `wallet+${method}` : method,
-      paymentGateway: 'razorpay',
+      paymentGateway: 'upi',
       paymentType,
       status: 'pending',
       gatewayOrderId: gwOrder.challenge.gatewayOrderId,
@@ -1070,7 +830,7 @@ class WalletDatabase {
       paymentMethod?: string;
     }
   ) {
-    const db = this.readSync();
+    const db = this.read();
     const payment = db.payments.find(
       (p) => p.id === input.paymentId && p.userId === session.uid
     );
@@ -1192,7 +952,7 @@ class WalletDatabase {
     session: SessionTokenPayload,
     input: { paymentId: string; reason?: string; cancelled?: boolean }
   ) {
-    const db = this.readSync();
+    const db = this.read();
     const payment = db.payments.find(
       (p) => p.id === input.paymentId && p.userId === session.uid
     );
@@ -1247,7 +1007,7 @@ class WalletDatabase {
       return { error: 'Minecraft IGN is required.', status: 400 as const };
     }
 
-    const db = this.readSync();
+    const db = this.read();
     const uid = session?.uid || `guest_${cleanIgn}`;
     let walletUsed = 0;
     let onlineDue = roundCurrency(input.totalAmount);
@@ -1355,139 +1115,10 @@ class WalletDatabase {
     return { order, payment };
   }
 
-  // ==================== RAZORPAY WEBHOOK HANDLER ====================
-
-  public handleRazorpayWebhook(rawBody: string, signatureHeader: string | undefined, body: any) {
-    if (!verifyRazorpayWebhookSignature(rawBody, signatureHeader)) {
-      return { ok: false, status: 400 as const, error: 'Invalid webhook signature.' };
-    }
-
-    const event = body?.event as string | undefined;
-    const payEntity = body?.payload?.payment?.entity;
-    const gatewayOrderId = payEntity?.order_id as string | undefined;
-    const gatewayPaymentId = payEntity?.id as string | undefined;
-    const method = (payEntity?.method as string | undefined) || 'upi';
-
-    if (!gatewayOrderId || !gatewayPaymentId) {
-      return { ok: true, status: 200 as const, ignored: true };
-    }
-
-    const db = this.readSync();
-
-    if (event === 'payment.captured') {
-      if (db.processedGatewayPaymentIds.includes(gatewayPaymentId)) {
-        return { ok: true, status: 200 as const, alreadyProcessed: true };
-      }
-
-      const recharge = db.wallet_recharges.find((r) => r.gatewayOrderId === gatewayOrderId);
-      if (recharge && recharge.status !== 'successful') {
-        const fakeUserSess: SessionTokenPayload = {
-          kind: 'user',
-          uid: recharge.userId,
-          email: recharge.email,
-          name: recharge.username,
-          isAdmin: false,
-          isOwner: false,
-          exp: Date.now() + 60000,
-        };
-        const wallet = this.getOrCreateWallet(db, fakeUserSess.uid, fakeUserSess.name, fakeUserSess.email);
-        const now = new Date().toISOString();
-        const prevBal = wallet.balance;
-        const nextBal = roundCurrency(prevBal + recharge.credits);
-        db.processedGatewayPaymentIds.push(gatewayPaymentId);
-        wallet.balance = nextBal;
-        wallet.totalCreditsAdded = roundCurrency(wallet.totalCreditsAdded + recharge.credits);
-        wallet.updatedAt = now;
-        recharge.status = 'successful';
-        recharge.gatewayPaymentId = gatewayPaymentId;
-        recharge.updatedAt = now;
-        const payment = db.payments.find((p) => p.id === recharge.paymentId);
-        if (payment) {
-          payment.status = 'successful';
-          payment.paymentMethod = method;
-          payment.transactionId = gatewayPaymentId;
-          payment.onlineTransactionId = gatewayPaymentId;
-          payment.verifiedByBackend = true;
-          payment.updatedAt = now;
-        }
-        db.wallet_transactions.unshift({
-          id: genId('WTX'),
-          transactionRef: gatewayPaymentId,
-          userId: recharge.userId,
-          type: 'wallet_recharge',
-          amount: recharge.credits,
-          previousBalance: prevBal,
-          updatedBalance: nextBal,
-          description: `Wallet recharge verified via Razorpay webhook (${gatewayPaymentId})`,
-          paymentId: payment?.id,
-          status: 'successful',
-          createdAt: now,
-        });
-        this.write(db);
-        this.emitEvent({ type: 'wallet_updated', userId: recharge.userId, paymentId: payment?.id });
-        return { ok: true, status: 200 as const };
-      }
-
-      const checkoutPayment = db.payments.find(
-        (p) => p.gatewayOrderId === gatewayOrderId && p.paymentType !== 'wallet_recharge'
-      );
-      if (checkoutPayment && checkoutPayment.status !== 'successful') {
-        const now = new Date().toISOString();
-        const wallet = this.getOrCreateWallet(db, checkoutPayment.userId, checkoutPayment.username, checkoutPayment.email);
-        const walletUsed = roundCurrency(checkoutPayment.walletAmount ?? 0);
-        if (checkoutPayment.paymentType === 'combined' && walletUsed > 0 && wallet.balance >= walletUsed) {
-          const prevBal = wallet.balance;
-          const nextBal = roundCurrency(prevBal - walletUsed);
-          wallet.balance = nextBal;
-          wallet.totalCreditsSpent = roundCurrency(wallet.totalCreditsSpent + walletUsed);
-          wallet.updatedAt = now;
-          db.wallet_transactions.unshift({
-            id: genId('WTX'),
-            transactionRef: gatewayPaymentId,
-            userId: checkoutPayment.userId,
-            type: 'product_purchase',
-            amount: walletUsed,
-            previousBalance: prevBal,
-            updatedBalance: nextBal,
-            description: `Combined checkout settled via webhook (${checkoutPayment.productName || 'Order'})`,
-            relatedOrderId: checkoutPayment.orderId,
-            paymentId: checkoutPayment.id,
-            status: 'successful',
-            createdAt: now,
-          });
-        }
-        db.processedGatewayPaymentIds.push(gatewayPaymentId);
-        checkoutPayment.status = 'successful';
-        checkoutPayment.paymentMethod =
-          checkoutPayment.paymentType === 'combined' ? `wallet+${method}` : method;
-        checkoutPayment.transactionId = gatewayPaymentId;
-        checkoutPayment.onlineTransactionId = gatewayPaymentId;
-        checkoutPayment.verifiedByBackend = true;
-        checkoutPayment.updatedAt = now;
-        const order = db.orders.find((o) => o.id === checkoutPayment.orderId);
-        if (order) order.status = 'completed';
-        this.write(db);
-        this.emitEvent({ type: 'payment_updated', userId: checkoutPayment.userId, paymentId: checkoutPayment.id });
-        this.emitEvent({ type: 'order_updated', userId: checkoutPayment.userId, paymentId: checkoutPayment.id });
-      }
-    } else if (event === 'payment.failed') {
-      const payment = db.payments.find((p) => p.gatewayOrderId === gatewayOrderId);
-      if (payment && payment.status === 'pending') {
-        payment.status = 'failed';
-        payment.failureReason = payEntity?.error_description || 'Razorpay webhook reported payment failed';
-        payment.updatedAt = new Date().toISOString();
-        this.write(db);
-        this.emitEvent({ type: 'payment_updated', userId: payment.userId, paymentId: payment.id });
-      }
-    }
-
-    return { ok: true, status: 200 as const };
-  }
-
   // ==================== ORDERS QUERIES & ADMIN ====================
 
   public listOrdersForSession(session: SessionTokenPayload): Order[] {
-    const db = this.readSync();
+    const db = this.read();
     if (session.kind === 'staff') {
       return [...db.orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
@@ -1497,7 +1128,7 @@ class WalletDatabase {
   }
 
   public updateOrderStatusByAdmin(orderId: string, status: Order['status']) {
-    const db = this.readSync();
+    const db = this.read();
     const order = db.orders.find((o) => o.id === orderId);
     if (!order) return null;
     order.status = status;
@@ -1507,7 +1138,7 @@ class WalletDatabase {
   }
 
   public deleteOrderByAdmin(orderId: string): boolean {
-    const db = this.readSync();
+    const db = this.read();
     const idx = db.orders.findIndex((o) => o.id === orderId);
     if (idx === -1) return false;
     const removed = db.orders[idx];
@@ -1520,7 +1151,7 @@ class WalletDatabase {
   // ==================== ADMIN WALLET MANAGEMENT ====================
 
   public listAllWalletsForAdmin(): { wallets: UserWallet[]; overview: WalletOverviewStats } {
-    const db = this.readSync();
+    const db = this.read();
     const wallets = [...db.user_wallets].sort((a, b) => b.balance - a.balance);
     return {
       wallets,
@@ -1529,7 +1160,7 @@ class WalletDatabase {
   }
 
   public getWalletDetailForAdmin(userId: string) {
-    const db = this.readSync();
+    const db = this.read();
     const wallet = db.user_wallets.find((w) => w.userId === userId);
     if (!wallet) return null;
     return {
@@ -1562,7 +1193,7 @@ class WalletDatabase {
       return { error: 'Target User ID is required.', status: 400 as const };
     }
 
-    const db = this.readSync();
+    const db = this.read();
     const wallet = this.getOrCreateWallet(db, cleanUid, input.username, input.email);
     const calc = computeWalletAdjustment(wallet.balance, input.action, input.amount, input.reason);
     if (!calc.valid) {
@@ -1619,7 +1250,7 @@ class WalletDatabase {
     stats: PaymentDashboardStats;
     gatewayConfig: PaymentGatewayPublicConfig;
   } {
-    const db = this.readSync();
+    const db = this.read();
     const payments = [...db.payments].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const refunds = [...db.payment_refunds].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return {
@@ -1631,7 +1262,7 @@ class WalletDatabase {
   }
 
   public getPaymentDetailForAdmin(paymentId: string) {
-    const db = this.readSync();
+    const db = this.read();
     const payment = db.payments.find((p) => p.id === paymentId);
     if (!payment) return null;
     const order = db.orders.find((o) => o.id === payment.orderId || o.paymentId === payment.id) || null;
@@ -1652,7 +1283,7 @@ class WalletDatabase {
     nextStatus: PaymentStatus,
     reason?: string
   ) {
-    const db = this.readSync();
+    const db = this.read();
     const payment = db.payments.find((p) => p.id === paymentId);
     if (!payment) {
       return { error: 'Payment record not found.', status: 404 as const };
@@ -1695,7 +1326,7 @@ class WalletDatabase {
       return { error: 'A refund reason is required for audit logs.', status: 400 as const };
     }
 
-    const db = this.readSync();
+    const db = this.read();
     const payment = db.payments.find((p) => p.id === paymentId);
     if (!payment) {
       return { error: 'Payment record not found.', status: 404 as const };
@@ -1708,7 +1339,7 @@ class WalletDatabase {
     }
 
     let gatewayRefundId = '';
-    if (breakdown.onlineRefundAmount > 0 && payment.paymentGateway === 'razorpay') {
+    if (breakdown.onlineRefundAmount > 0) {
       const gwRefund = await executeGatewayRefund({
         gatewayPaymentId: payment.onlineTransactionId || payment.transactionId,
         amountInr: breakdown.onlineRefundAmount,
@@ -1828,19 +1459,19 @@ class WalletDatabase {
   // ==================== WALLET COUPONS & REDEEM SYSTEM ====================
 
   public listWalletCoupons(): WalletCoupon[] {
-    const db = this.readSync();
+    const db = this.read();
     return [...db.wallet_coupons].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   public getWalletCouponById(couponId: string): WalletCoupon | null {
-    const db = this.readSync();
+    const db = this.read();
     return db.wallet_coupons.find((c) => c.id === couponId) || null;
   }
 
   public getWalletCouponByCode(codeRaw: string): WalletCoupon | null {
     const normalized = normalizeCouponCode(codeRaw);
     if (!normalized) return null;
-    const db = this.readSync();
+    const db = this.read();
     return db.wallet_coupons.find((c) => normalizeCouponCode(c.code) === normalized) || null;
   }
 
@@ -1869,7 +1500,7 @@ class WalletDatabase {
       throw new Error('Coupon reward amount must be at least ₹1 INR.');
     }
 
-    const db = this.readSync();
+    const db = this.read();
     const existing = db.wallet_coupons.find(
       (c) => normalizeCouponCode(c.code) === cleanCode
     );
@@ -1925,7 +1556,7 @@ class WalletDatabase {
     couponId: string,
     updates: Partial<WalletCoupon>
   ): WalletCoupon {
-    const db = this.readSync();
+    const db = this.read();
     const coupon = db.wallet_coupons.find((c) => c.id === couponId);
     if (!coupon) {
       throw new Error(`Coupon "${couponId}" not found.`);
@@ -1998,7 +1629,7 @@ class WalletDatabase {
   }
 
   public deleteWalletCoupon(adminSession: SessionTokenPayload, couponId: string): boolean {
-    const db = this.readSync();
+    const db = this.read();
     const idx = db.wallet_coupons.findIndex((c) => c.id === couponId);
     if (idx === -1) {
       throw new Error(`Coupon "${couponId}" not found.`);
@@ -2010,7 +1641,7 @@ class WalletDatabase {
   }
 
   public listWalletCouponRedemptions(userId?: string): WalletCouponRedemption[] {
-    const db = this.readSync();
+    const db = this.read();
     if (userId) {
       return db.wallet_coupon_redemptions
         .filter((r) => r.userId === userId)
@@ -2038,7 +1669,7 @@ class WalletDatabase {
       throw new Error('Please enter a coupon code.');
     }
 
-    const db = this.readSync();
+    const db = this.read();
     const coupon = db.wallet_coupons.find(
       (c) => normalizeCouponCode(c.code) === normalized
     );
@@ -2143,7 +1774,7 @@ class WalletDatabase {
       throw new Error('Invalid debit amount.');
     }
 
-    const db = this.readSync();
+    const db = this.read();
     const wallet = this.getOrCreateWallet(db, userId, meta.username, meta.email);
 
     if (cleanAmount > 0 && wallet.balance < cleanAmount) {

@@ -1,4 +1,9 @@
 /**
+ * LEGACY AUTH MODULE — not wired into the active Express routes.
+ * The active runtime authentication lives in server.ts and server/supportDb.ts.
+ * This Supabase-backed module is retained temporarily for migration compatibility;
+ * do not import it into production routes without reviewing its credential model.
+ *
  * WONDERMC — Centralized Authentication & Authorization Middleware
  * ==================================================================
  *

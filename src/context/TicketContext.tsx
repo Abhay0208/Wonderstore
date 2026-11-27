@@ -8,7 +8,6 @@ import {
   DiscordSupportConfigPublic,
   SupportTicketPriority,
   SupportTicketStatus,
-  SubAdminKey,
 } from '../types';
 import { useAuth } from './AuthContext';
 import {
@@ -57,7 +56,7 @@ interface TicketContextType {
   ratings: SupportRating[];
   discordConfig: DiscordSupportConfigPublic | null;
   isLoadingStaffTickets: boolean;
-  loginStaffSession: (passkey: string, subAdminKeys?: SubAdminKey[]) => Promise<StaffPortalAuthResponse>;
+  loginStaffSession: (passkey: string) => Promise<StaffPortalAuthResponse>;
   logoutStaffSession: () => void;
   refreshStaffData: () => Promise<void>;
   openStaffTicketBundle: (ticketId: string) => Promise<SupportTicketDetailBundle>;
@@ -343,7 +342,7 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Staff/Admin Operations
-  const loginStaffSession = async (passkey: string, _subAdminKeys?: SubAdminKey[]) => {
+  const loginStaffSession = async (passkey: string) => {
     setIsLoadingStaffTickets(true);
     try {
       const sess = await supportService.loginStaffPortal(passkey);

@@ -11,16 +11,7 @@ import {
 import type { GatewayOrderChallenge, GatewayPaymentMethod } from '../../types';
 import { formatINR } from '../../config/storeDefaults';
 
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => {
-      open: () => void;
-      on: (event: string, cb: (resp: any) => void) => void;
-    };
-  }
-}
-
-interface GatewayCheckoutModalProps {
+export interface GatewayCheckoutModalProps {
   isOpen: boolean;
   title: string;
   subtitle?: string;
@@ -39,27 +30,6 @@ interface GatewayCheckoutModalProps {
   }) => Promise<void>;
   onPaymentFailure: (reason: string, cancelled: boolean) => Promise<void>;
   onClose: () => void;
-}
-
-function loadRazorpaySdk(): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (window.Razorpay) {
-      resolve(true);
-      return;
-    }
-    const existing = document.querySelector('script[data-wondermc-rzp="1"]');
-    if (existing) {
-      existing.addEventListener('load', () => resolve(Boolean(window.Razorpay)));
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.dataset.wondermcRzp = '1';
-    script.onload = () => resolve(Boolean(window.Razorpay));
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
 }
 
 export const GatewayCheckoutModal: React.FC<GatewayCheckoutModalProps> = ({
@@ -84,87 +54,7 @@ export const GatewayCheckoutModal: React.FC<GatewayCheckoutModalProps> = ({
     setIsProcessing(false);
   }, [challenge?.gatewayOrderId]);
 
-  // Launch real Razorpay Checkout SDK automatically if external credentials are active (UPI only)
-  useEffect(() => {
-    if (!isOpen || !challenge || !challenge.isExternalRazorpay) return;
-    let cancelled = false;
-
-    const launch = async () => {
-      setIsProcessing(true);
-      const loaded = await loadRazorpaySdk();
-      if (cancelled) return;
-      if (!loaded || !window.Razorpay) {
-        setErrorMsg('Failed to load Razorpay Checkout SDK. Check network or switch to Test Mode.');
-        setIsProcessing(false);
-        return;
-      }
-
-      const rzp = new window.Razorpay({
-        key: challenge.keyId,
-        amount: challenge.amountPaise,
-        currency: challenge.currency,
-        name: 'WonderMC Store',
-        description: title,
-        order_id: challenge.gatewayOrderId,
-        method: {
-          upi: true,
-          card: false,
-          netbanking: false,
-          wallet: false,
-          emi: false,
-          paylater: false,
-        },
-        prefill: {
-          name: userName || undefined,
-          email: userEmail || undefined,
-        },
-        theme: { color: '#f3a847' },
-        handler: async (resp: {
-          razorpay_payment_id: string;
-          razorpay_order_id: string;
-          razorpay_signature: string;
-        }) => {
-          try {
-            await onPaymentSuccess({
-              gatewayOrderId: resp.razorpay_order_id || challenge.gatewayOrderId,
-              gatewayPaymentId: resp.razorpay_payment_id,
-              signature: resp.razorpay_signature,
-              method: 'upi',
-            });
-            onClose();
-          } catch (err: any) {
-            setErrorMsg(err?.message || 'Payment verification failed on server.');
-          } finally {
-            setIsProcessing(false);
-          }
-        },
-        modal: {
-          ondismiss: async () => {
-            if (cancelled) return;
-            await onPaymentFailure('Cancelled in Razorpay modal', true);
-            onClose();
-          },
-        },
-      });
-
-      rzp.on('payment.failed', async (resp: any) => {
-        const reason = resp?.error?.description || 'Payment failed in Razorpay';
-        setErrorMsg(reason);
-        await onPaymentFailure(reason, false);
-        setIsProcessing(false);
-      });
-
-      rzp.open();
-    };
-
-    void launch();
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, challenge?.gatewayOrderId, challenge?.isExternalRazorpay]);
-
-  if (!isOpen || !challenge) return null;
-
+  // Handle UPI sandbox payment verification
   const handleSandboxPay = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
@@ -172,7 +62,7 @@ export const GatewayCheckoutModal: React.FC<GatewayCheckoutModalProps> = ({
     try {
       const auth = await onAuthorizeSandbox('upi');
       await onPaymentSuccess({
-        gatewayOrderId: challenge.gatewayOrderId,
+        gatewayOrderId: challenge!.gatewayOrderId,
         gatewayPaymentId: auth.gatewayPaymentId,
         signature: auth.signature,
         method: 'upi',
@@ -228,11 +118,11 @@ export const GatewayCheckoutModal: React.FC<GatewayCheckoutModalProps> = ({
                   {title}
                 </h3>
                 <span className="px-2 py-0.5 rounded bg-[#581c27] border border-[#f3a847]/40 text-[9px] font-black uppercase text-[#f3a847]">
-                  {challenge.mode === 'live' ? 'LIVE UPI RAZORPAY' : 'UPI TEST GATEWAY'}
+                  UPI TEST GATEWAY
                 </span>
               </div>
               <p className="text-[11px] text-rose-200/70 truncate">
-                {subtitle || `Gateway Order: ${challenge.gatewayOrderId}`}
+                {subtitle || `Gateway Order: ${challenge?.gatewayOrderId}`}
               </p>
             </div>
           </div>
@@ -257,7 +147,7 @@ export const GatewayCheckoutModal: React.FC<GatewayCheckoutModalProps> = ({
                 Payable Amount (INR)
               </span>
               <span className="text-2xl font-black text-[#f3a847] font-display">
-                {formatINR(challenge.amountInr)}
+                {formatINR(challenge?.amountInr)}
               </span>
             </div>
             <div className="text-right">
@@ -265,7 +155,7 @@ export const GatewayCheckoutModal: React.FC<GatewayCheckoutModalProps> = ({
                 Order Reference
               </span>
               <span className="text-xs font-mono font-bold text-white">
-                {challenge.gatewayOrderId}
+                {challenge?.gatewayOrderId}
               </span>
             </div>
           </div>
@@ -277,103 +167,89 @@ export const GatewayCheckoutModal: React.FC<GatewayCheckoutModalProps> = ({
             </div>
           )}
 
-          {challenge.isExternalRazorpay ? (
-            <div className="py-8 text-center space-y-3">
-              <Loader2 className="w-8 h-8 animate-spin text-[#f3a847] mx-auto" />
-              <p className="text-sm font-bold text-white">
-                Razorpay UPI Window Active
-              </p>
-              <p className="text-xs text-rose-200/70">
-                Complete your UPI payment inside the Razorpay popup. Backend HMAC verification runs automatically upon completion.
-              </p>
+          {/* Payment Method (UPI Only) */}
+          <div className="space-y-2">
+            <span className="text-[11px] font-black uppercase tracking-wider text-[#f3a847] block">
+              Payment Method
+            </span>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-[#f3a847] bg-[#581c27] p-3 text-left shadow-md">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-9 w-9 rounded-lg bg-[#2a0b11] border border-[#752635] flex items-center justify-center shrink-0">
+                  <Smartphone className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-black text-white">UPI (GPay / PhonePe / Paytm)</div>
+                  <div className="text-[11px] text-rose-200/75 truncate">
+                    Instant UPI collect or QR intent verification
+                  </div>
+                </div>
+              </div>
+              <div className="h-4 w-4 rounded-full border-2 border-[#f3a847] bg-[#f3a847] flex items-center justify-center shrink-0">
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-950" />
+              </div>
             </div>
-          ) : (
-            <>
-              {/* Payment Method (UPI Only) */}
-              <div className="space-y-2">
-                <span className="text-[11px] font-black uppercase tracking-wider text-[#f3a847] block">
-                  Payment Method
-                </span>
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-[#f3a847] bg-[#581c27] p-3 text-left shadow-md">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="h-9 w-9 rounded-lg bg-[#2a0b11] border border-[#752635] flex items-center justify-center shrink-0">
-                      <Smartphone className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-black text-white">UPI (GPay / PhonePe / Paytm)</div>
-                      <div className="text-[11px] text-rose-200/75 truncate">
-                        Instant UPI collect or QR intent verification
-                      </div>
-                    </div>
-                  </div>
-                  <div className="h-4 w-4 rounded-full border-2 border-[#f3a847] bg-[#f3a847] flex items-center justify-center shrink-0">
-                    <span className="h-1.5 w-1.5 rounded-full bg-slate-950" />
-                  </div>
-                </div>
-              </div>
+          </div>
 
-              {/* Dynamic UPI ID Input */}
-              <div className="rounded-xl border border-[#611c2a] bg-[#2a0b11] p-3 space-y-2">
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-rose-200/70 mb-1">
-                    UPI ID / VPA (Test Collect)
-                  </label>
-                  <input
-                    type="text"
-                    value={upiVpa}
-                    onChange={(e) => setUpiVpa(e.target.value)}
-                    placeholder="yourname@okaxis"
-                    className="w-full rounded-lg border border-[#611c2a] bg-[#1d070b] px-3 py-2 text-xs font-mono text-white outline-none focus:border-[#f3a847]"
-                  />
-                </div>
-              </div>
+          {/* Dynamic UPI ID Input */}
+          <div className="rounded-xl border border-[#611c2a] bg-[#2a0b11] p-3 space-y-2">
+            <div>
+              <label className="block text-[10px] font-black uppercase text-rose-200/70 mb-1">
+                UPI ID / VPA (Test Collect)
+              </label>
+              <input
+                type="text"
+                value={upiVpa}
+                onChange={(e) => setUpiVpa(e.target.value)}
+                placeholder="yourname@okaxis"
+                className="w-full rounded-lg border border-[#611c2a] bg-[#1d070b] px-3 py-2 text-xs font-mono text-white outline-none focus:border-[#f3a847]"
+              />
+            </div>
+          </div>
 
-              {/* Actions */}
-              <div className="space-y-2 pt-1">
-                <button
-                  type="button"
-                  disabled={isProcessing}
-                  onClick={handleSandboxPay}
-                  data-testid="gateway-confirm-pay-btn"
-                  className="w-full rounded-2xl bg-gradient-to-r from-[#c0782f] via-[#e6a147] to-[#c0782f] py-3.5 text-xs sm:text-sm font-black uppercase tracking-wider text-slate-950 hover:brightness-110 transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/50 cursor-pointer disabled:opacity-50 font-display"
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Verifying UPI Signature...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>
-                        Complete Verified UPI Payment ({formatINR(challenge.amountInr)})
-                      </span>
-                    </>
-                  )}
-                </button>
+          {/* Actions */}
+          <div className="space-y-2 pt-1">
+            <button
+              type="button"
+              disabled={isProcessing}
+              onClick={handleSandboxPay}
+              data-testid="gateway-confirm-pay-btn"
+              className="w-full rounded-2xl bg-gradient-to-r from-[#c0782f] via-[#e6a147] to-[#c0782f] py-3.5 text-xs sm:text-sm font-black uppercase tracking-wider text-slate-950 hover:brightness-110 transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/50 cursor-pointer disabled:opacity-50 font-display"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Verifying UPI Signature...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>
+                    Complete Verified UPI Payment ({formatINR(challenge?.amountInr)})
+                  </span>
+                </>
+              )}
+            </button>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={isProcessing}
-                    onClick={handleSimulateFailure}
-                    data-testid="gateway-simulate-fail-btn"
-                    className="rounded-xl border border-rose-500/40 bg-[#2a0b11] py-2.5 text-[11px] font-black uppercase tracking-wide text-rose-300 hover:bg-rose-950/70 transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    Simulate Failure
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isProcessing}
-                    onClick={handleCancel}
-                    className="rounded-xl border border-[#611c2a] bg-[#2a0b11] py-2.5 text-[11px] font-black uppercase tracking-wide text-rose-200/80 hover:text-white hover:bg-[#581c27] transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    Cancel Payment
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={handleSimulateFailure}
+                data-testid="gateway-simulate-fail-btn"
+                className="rounded-xl border border-rose-500/40 bg-[#2a0b11] py-2.5 text-[11px] font-black uppercase tracking-wide text-rose-300 hover:bg-rose-950/70 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Simulate Failure
+              </button>
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={handleCancel}
+                className="rounded-xl border border-[#611c2a] bg-[#2a0b11] py-2.5 text-[11px] font-black uppercase tracking-wide text-rose-200/80 hover:text-white hover:bg-[#581c27] transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel Payment
+              </button>
+            </div>
+          </div>
 
           <div className="flex items-center justify-center gap-1.5 text-[10px] text-rose-200/65 pt-1">
             <Lock className="w-3 h-3 text-emerald-400" />

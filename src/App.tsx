@@ -44,7 +44,6 @@ import {
 import { StoreCategory, StoreItem, TopBuyer, StaffMember, ServerUpdate, SubAdminKey, Coupon, ActivityLog, VoteLink, ConnectionGuide, RuleCategory, Order } from './types';
 import { sortStaffByHierarchy } from './utils/staffHierarchy';
 import { storageAdapter, STORAGE_KEYS } from './services/storageAdapter';
-import { storeDataService } from './services/storeDataService';
 
 const filterCleanCategories = (list: StoreCategory[]) =>
   list.filter(
@@ -126,26 +125,6 @@ function MainStoreContent() {
     const saved = storageAdapter.read<RuleCategory[] | null>(STORAGE_KEYS.RULES, null);
     return Array.isArray(saved) && saved.length > 0 ? saved : INITIAL_RULES_CATEGORIES;
   });
-
-  // Fetch all shared data from the central backend (Supabase) on mount so that
-  // every browser/device sees the same data. Never let an empty API response
-  // wipe existing local cache — only apply non-empty payloads.
-  useEffect(() => {
-    let cancelled = false;
-    storeDataService.fetchSharedData().then((data) => {
-      if (cancelled) return;
-      if (data.categories.length) setCategories(filterCleanCategories(data.categories));
-      if (data.items.length) setItems(filterCleanItems(data.items));
-      if (data.leaderboard.length) setLeaderboard(data.leaderboard);
-      if (data.staff.length) setStaffList(sortStaffByHierarchy(data.staff));
-      if (data.updates.length) setUpdatesList(data.updates);
-      if (data.coupons.length) setCouponsList(data.coupons);
-      if (data.voteLinks.length) setVoteLinks(data.voteLinks);
-      if (data.rules.length) setRulesCategories(data.rules);
-      if (data.guide) setConnectionGuide(data.guide);
-    }).catch(() => { /* offline: retain local cache */ });
-    return () => { cancelled = true; };
-  }, []);
 
   const handleUpdateActivityLogs = (newLogs: ActivityLog[]) => {
     setActivityLogs(newLogs);
@@ -229,25 +208,12 @@ function MainStoreContent() {
   const handleSaveStaffToBackend = async (overrideStaff?: StaffMember[]): Promise<boolean> => {
     const sorted = sortStaffByHierarchy(overrideStaff || staffList);
     setStaffList(sorted);
-    storageAdapter.write(STORAGE_KEYS.STAFF, sorted);
-    try {
-      await storeDataService.saveStaff(sorted);
-      return true;
-    } catch {
-      return false; // DB write failed — caller surfaces the error
-    }
-  };
-
-  // Fire-and-forget persistence of shared data to Supabase (errors are logged;
-  // the authoritative sync happens through the admin panel save handlers).
-  const persistShared = (promise: Promise<void>) => {
-    promise.catch((err) => console.warn('[SharedData] background persist failed:', err?.message || err));
+    return storageAdapter.write(STORAGE_KEYS.STAFF, sorted);
   };
 
   const handleUpdateServerUpdates = (newUpdates: ServerUpdate[]) => {
     setUpdatesList(newUpdates);
     storageAdapter.write(STORAGE_KEYS.UPDATES, newUpdates);
-    persistShared(storeDataService.saveUpdates(newUpdates));
   };
 
   const handleUpdateSubAdminKeys = (newKeys: SubAdminKey[]) => {
@@ -264,7 +230,6 @@ function MainStoreContent() {
     const filteredCats = filterCleanCategories(newCats);
     setCategories(filteredCats);
     storageAdapter.write(STORAGE_KEYS.CATEGORIES, filteredCats);
-    persistShared(storeDataService.saveCategories(filteredCats));
   };
 
   const handleUpdateLeaderboard = (newLead: TopBuyer[]) => {
@@ -286,13 +251,7 @@ function MainStoreContent() {
         rank: idx + 1,
       }));
     setLeaderboard(sorted);
-    storageAdapter.write(STORAGE_KEYS.LEADERBOARD, sorted);
-    try {
-      await storeDataService.saveLeaderboard(sorted);
-      return true;
-    } catch {
-      return false; // DB write failed — caller surfaces the error
-    }
+    return storageAdapter.write(STORAGE_KEYS.LEADERBOARD, sorted);
   };
 
   const handleUpdateVoteLinks = (newLinks: VoteLink[]) => {
@@ -318,7 +277,6 @@ function MainStoreContent() {
     const filtered = filterCleanItems(newItems);
     setItems(filtered);
     storageAdapter.write(STORAGE_KEYS.ITEMS, filtered);
-    persistShared(storeDataService.saveItems(filtered));
   };
 
   const handleUpdateCategoriesAndItems = (newCats: StoreCategory[], newItems: StoreItem[]) => {
@@ -328,8 +286,6 @@ function MainStoreContent() {
     setItems(filteredItems);
     storageAdapter.write(STORAGE_KEYS.CATEGORIES, filteredCats);
     storageAdapter.write(STORAGE_KEYS.ITEMS, filteredItems);
-    persistShared(storeDataService.saveCategories(filteredCats));
-    persistShared(storeDataService.saveItems(filteredItems));
   };
 
   const [selectedGamemode, setSelectedGamemode] = useState<string | null>(null);

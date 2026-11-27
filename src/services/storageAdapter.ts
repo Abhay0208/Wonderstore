@@ -1,8 +1,10 @@
 /**
  * Modular Persistence Adapter for WONDER MC Storefront.
  *
- * Primary persistence is now Supabase (via backend API endpoints).
- * localStorage is retained only as a short-lived cache for UI responsiveness.
+ * Temporarily operates 100% locally via browser localStorage without any external
+ * database API calls or credentials. Future database backends (e.g. Firestore,
+ * PostgreSQL, REST API) can implement `StorageAdapter` and be plugged in here
+ * without rewriting UI components or contexts.
  */
 
 export interface StorageAdapter {
@@ -50,8 +52,6 @@ class LocalBrowserStorageAdapter implements StorageAdapter {
   }
 }
 
-// Use local adapter as cache; real persistence happens through backend services
-// that write to Supabase. Do not treat localStorage as the source of truth.
 export const storageAdapter: StorageAdapter = new LocalBrowserStorageAdapter();
 
 export const STORAGE_KEYS = {

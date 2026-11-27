@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { getSupabaseAdmin } from './supabaseAdmin';
 import type { GamemodeVisualSettings, StoreCategory, StoreThemeId, ThemeSettingItem } from '../src/types';
 import { INITIAL_CATEGORIES } from '../src/config/storeDefaults';
 import { deduplicateStoreCategories } from '../src/utils/categoryManagement';
@@ -50,75 +49,6 @@ function createInitialSiteDb(): SiteDbSchema {
 
 class SiteDatabase {
   private cache: SiteDbSchema | null = null;
-
-  /**
-   * Hydrate the cache from Supabase (source of truth). Falls back to local JSON
-   * on failure. Called once at server startup so every instance serves the
-   * same central data and data survives restarts / redeployments.
-   */
-  public async hydrateFromSupabase(): Promise<void> {
-    const admin = getSupabaseAdmin();
-    if (!admin) return;
-    try {
-      const [catsRes, themesRes, clicksRes, gamemodeRes] = await Promise.all([
-        admin.from('store_categories').select('*'),
-        admin.from('theme_settings').select('*'),
-        admin.from('click_animations').select('*'),
-        admin.from('gamemode_visuals').select('*'),
-      ]);
-      const firstError = [catsRes, themesRes, clicksRes, gamemodeRes].find((r) => r.error);
-      if (firstError?.error) throw firstError.error;
-
-      // Only hydrate if Supabase actually has data (avoid wiping good local
-      // defaults on a freshly created empty project before migration).
-      const hasData =
-        (catsRes.data?.length || 0) > 0 ||
-        (themesRes.data?.length || 0) > 0 ||
-        (clicksRes.data?.length || 0) > 0 ||
-        (gamemodeRes.data?.length || 0) > 0;
-      if (!hasData) return;
-
-      const themeSettings: Record<string, any> = {};
-      for (const row of themesRes.data || []) {
-        themeSettings[row.id] = {
-          id: row.id,
-          enabled: row.enabled,
-          isDefault: row.is_default,
-          startDate: row.start_date,
-          endDate: row.end_date,
-          bannerUrl: row.banner_url,
-          floatingEmojisEnabled: row.floating_emojis_enabled,
-          floatingEmojis: row.floating_emojis,
-          floatingEmojiDensity: row.floating_emoji_density,
-          floatingEmojiSpeed: row.floating_emoji_speed,
-        };
-      }
-      const clickAnimations: Record<string, any> = {};
-      for (const row of clicksRes.data || []) {
-        clickAnimations[row.theme_id] = row.config;
-      }
-      const gamemode = (gamemodeRes.data || [])[0];
-
-      this.cache = {
-        store_categories: (catsRes.data || []).map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          game_mode: c.game_mode,
-          description: c.description,
-          image_url: c.image_url,
-          icon: c.icon,
-          enabled: c.enabled,
-          display_order: c.display_order,
-          theme: c.theme,
-        })),
-        theme_settings: normalizeThemeSettings(themeSettings),
-        click_animations: normalizeClickAnimationsMap(clickAnimations),
-        gamemode_visuals: gamemode ? normalizeGamemodeVisuals(gamemode.settings) : normalizeGamemodeVisuals(DEFAULT_GAMEMODE_VISUALS),
-      } as SiteDbSchema;
-    } catch (err: any) {
-      console.error('[siteDb] Supabase hydration failed, using local JSON:', err?.message || String(err));
-    }
-  }
 
   private load(): SiteDbSchema {
     if (this.cache) return this.cache;
@@ -171,74 +101,11 @@ class SiteDatabase {
   }
 
   private save(data: SiteDbSchema): void {
+    ensureDataDir();
     this.cache = data;
-    // Persist to Supabase (primary)
-    const admin = getSupabaseAdmin();
-    if (admin) {
-      // Categories
-      admin.from('store_categories').upsert(
-        data.store_categories.map((c) => ({
-          id: c.id,
-          name: c.name,
-          game_mode: c.game_mode,
-          description: c.description,
-          image_url: c.image_url,
-          icon: c.icon,
-          enabled: c.enabled ?? true,
-          display_order: c.display_order ?? 0,
-          theme: c.theme ?? 'auto',
-        })),
-        { onConflict: 'id' }
-      ).then(({ error }) => {
-        if (error) console.error('[siteDb] categories upsert error', error.message);
-      });
-
-      // Theme settings
-      const themeRows = Object.entries(data.theme_settings).map(([id, t]) => ({
-        id,
-        enabled: t.enabled,
-        is_default: t.isDefault ?? false,
-        start_date: t.startDate,
-        end_date: t.endDate,
-        banner_url: t.bannerUrl,
-        floating_emojis_enabled: t.floatingEmojisEnabled,
-        floating_emojis: t.floatingEmojis ?? [],
-        floating_emoji_density: t.floatingEmojiDensity,
-        floating_emoji_speed: t.floatingEmojiSpeed,
-      }));
-      admin.from('theme_settings').upsert(themeRows, { onConflict: 'id' }).then(({ error }) => {
-        if (error) console.error('[siteDb] themes upsert error', error.message);
-      });
-
-      // Click animations
-      const clickRows = Object.entries(data.click_animations).map(([theme_id, config]) => ({
-        theme_id,
-        config,
-      }));
-      admin.from('click_animations').upsert(clickRows, { onConflict: 'theme_id' }).then(({ error }) => {
-        if (error) console.error('[siteDb] click upsert error', error.message);
-      });
-
-      // Gamemode visuals
-      if (data.gamemode_visuals) {
-        admin.from('gamemode_visuals').upsert(
-          { id: 'default', settings: data.gamemode_visuals },
-          { onConflict: 'id' }
-        ).then(({ error }) => {
-          if (error) console.error('[siteDb] gamemode upsert error', error.message);
-        });
-      }
-    }
-
-    // Keep local JSON as emergency fallback only
-    try {
-      ensureDataDir();
-      const tmp = `${SITE_DB_FILE}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
-      fs.renameSync(tmp, SITE_DB_FILE);
-    } catch {
-      // ignore local write failures
-    }
+    const tmp = `${SITE_DB_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tmp, SITE_DB_FILE);
   }
 
   getStoreCategories(): StoreCategory[] {

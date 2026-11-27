@@ -1,0 +1,25 @@
+{
+  "support_tickets": [],
+  "support_messages": [],
+  "support_attachments": [],
+  "support_staff_assignments": [],
+  "support_notifications": [],
+  "support_ratings": [],
+  "support_staff_permissions": [
+    {
+      "id": "staff-support-lead",
+      "name": "Support & News Admin",
+      "roleTitle": "Support Moderator",
+      "passkey": "supportpass123",
+      "active": true,
+      "canViewAllTickets": false,
+      "canReply": true,
+      "canAssign": false,
+      "canChangeStatus": true,
+      "canAddInternalNotes": true,
+      "canDeleteTickets": false,
+      "updatedAt": "2026-11-20T09:03:11.697Z"
+    }
+  ],
+  "ticket_history": []
+}

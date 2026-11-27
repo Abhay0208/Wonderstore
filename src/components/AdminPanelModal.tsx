@@ -196,7 +196,7 @@ const ALL_TAB_PERMISSIONS_INFO: { id: TabType; label: string; icon: string; desc
   { id: 'products', label: 'Products & Catalog', icon: '📦', desc: 'Manage store packages, prices, and categories' },
   { id: 'orders', label: 'Purchase Management', icon: '🛍️', desc: 'Review all store orders, wallet/online splits, UTRs & delivery approval' },
   { id: 'wallet', label: 'Wallet Management', icon: '🪙', desc: 'Inspect player wallet balances, ledgers & perform manual credit/debit/promo adjustments' },
-  { id: 'payment_management', label: 'Payment Management', icon: '💰', desc: 'Search gateway transactions, view 9 payment KPIs, initiate refunds & configure Razorpay' },
+  { id: 'payment_management', label: 'Payment Management', icon: '💰', desc: 'Search gateway transactions, view 9 payment KPIs, initiate refunds' },
   { id: 'coupon_management', label: 'Coupon Management', icon: '🎟️', desc: 'Create coupon codes, generate random vouchers, enforce limits, and view player redemptions' },
   { id: 'donations', label: 'Donations Management', icon: '👑', desc: 'Verify manual UPI donations, manage Top Donators leaderboard, reward tiers & settings' },
   { id: 'tickets', label: 'Ticket Management', icon: '💬', desc: 'View player tickets, reply, and update ticket status' },
@@ -7858,7 +7858,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {[
                   { tab: 'wallet' as TabType, title: 'Wallet Management', desc: 'Inspect customer balances, ledgers & manual credit/debit adjustments.', color: 'border-amber-500/30 hover:border-amber-400' },
-                  { tab: 'payment_management' as TabType, title: 'Payment Management', desc: '9 revenue KPIs, combined payment details, refunds & Razorpay keys.', color: 'border-emerald-500/30 hover:border-emerald-400' },
+                  { tab: 'payment_management' as TabType, title: 'Payment Management', desc: '9 revenue KPIs, combined payment details, refunds.', color: 'border-emerald-500/30 hover:border-emerald-400' },
                   { tab: 'coupon_management' as TabType, title: 'Coupon Management', desc: 'Create coupon codes, generate random vouchers, enforce limits & view redemptions.', color: 'border-fuchsia-500/30 hover:border-fuchsia-400' },
                   { tab: 'orders' as TabType, title: 'Purchase Management', desc: 'Approve store deliveries, check wallet/online splits & UTR proofs.', color: 'border-sky-500/30 hover:border-sky-400' },
                   { tab: 'users' as TabType, title: 'Users Management', desc: 'Customer directory with wallet balances, orders & ticket history.', color: 'border-indigo-500/30 hover:border-indigo-400' },

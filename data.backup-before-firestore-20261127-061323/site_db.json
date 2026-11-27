@@ -1,0 +1,159 @@
+{
+  "store_categories": [
+    {
+      "id": "cat-ranks",
+      "name": "Ranks",
+      "game_mode": "Lifesteal",
+      "description": "Unlock permanent perks, colored chat tags, extra homes, and priority queue access.",
+      "image_url": "/store/ranks.png",
+      "icon": "👑",
+      "enabled": true,
+      "display_order": 0
+    },
+    {
+      "id": "cat-keys",
+      "name": "Crate Keys",
+      "game_mode": "Lifesteal",
+      "description": "Open mystery crates at spawn for rare enchanted gear, hearts, and seasonal loot.",
+      "image_url": "/store/keys.png",
+      "icon": "🗝️",
+      "enabled": true,
+      "display_order": 1
+    },
+    {
+      "id": "cat-kits",
+      "name": "Kits",
+      "game_mode": "Lifesteal",
+      "description": "Dominate Lifesteal PvP with combat kits, totems, and netherite supplies.",
+      "image_url": "/store/kits.png",
+      "icon": "⚔️",
+      "enabled": true,
+      "display_order": 2
+    },
+    {
+      "id": "cat-coins",
+      "name": "Coins",
+      "game_mode": "Lifesteal",
+      "description": "Top up in-game coins to trade with players and unlock cosmetic bundles.",
+      "image_url": "/store/coins.png",
+      "icon": "🪙",
+      "enabled": true,
+      "display_order": 3
+    },
+    {
+      "id": "cat-practice-ranks",
+      "name": "Practice Ranks",
+      "game_mode": "Practice",
+      "description": "Stand out in Practice PvP with custom prefixes, extra duels, and arena perks.",
+      "image_url": "/store/ranks.png",
+      "icon": "🛡️",
+      "enabled": true,
+      "display_order": 4
+    },
+    {
+      "id": "cat-practice-bundles",
+      "name": "Practice Bundles",
+      "game_mode": "Practice",
+      "description": "Tournament passes, unban tokens, and ranked season cosmetic packs.",
+      "image_url": "/store/others.png",
+      "icon": "🔥",
+      "enabled": true,
+      "display_order": 5
+    }
+  ],
+  "theme_settings": {
+    "default": {
+      "id": "default",
+      "enabled": true
+    },
+    "winter": {
+      "id": "winter",
+      "enabled": true,
+      "floatingEmojisEnabled": true,
+      "floatingEmojiDensity": "normal",
+      "floatingEmojiSpeed": "normal"
+    },
+    "christmas": {
+      "id": "christmas",
+      "enabled": true
+    },
+    "newyear2027": {
+      "id": "newyear2027",
+      "enabled": true
+    },
+    "ramadan": {
+      "id": "ramadan",
+      "enabled": true
+    }
+  },
+  "click_animations": {
+    "default": {
+      "enabled": true,
+      "animationType": "diamond",
+      "emoji": "💎",
+      "count": 5,
+      "size": "medium",
+      "speed": "normal",
+      "direction": "burst",
+      "rotation": false,
+      "fade": true,
+      "duration": 720
+    },
+    "winter": {
+      "enabled": true,
+      "animationType": "snowflake",
+      "emoji": "❄️",
+      "count": 6,
+      "size": "medium",
+      "speed": "normal",
+      "direction": "burst",
+      "rotation": true,
+      "fade": true,
+      "duration": 650
+    },
+    "christmas": {
+      "enabled": true,
+      "animationType": "gift",
+      "emoji": "🎁",
+      "count": 5,
+      "size": "medium",
+      "speed": "normal",
+      "direction": "burst",
+      "rotation": false,
+      "fade": true,
+      "duration": 750
+    },
+    "newyear2027": {
+      "enabled": true,
+      "animationType": "celebration",
+      "emoji": "🎉",
+      "count": 6,
+      "size": "medium",
+      "speed": "fast",
+      "direction": "burst",
+      "rotation": false,
+      "fade": true,
+      "duration": 780
+    },
+    "ramadan": {
+      "enabled": true,
+      "animationType": "crescent_moon",
+      "emoji": "🌙",
+      "count": 5,
+      "size": "medium",
+      "speed": "normal",
+      "direction": "burst",
+      "rotation": false,
+      "fade": true,
+      "duration": 820
+    }
+  },
+  "gamemode_visuals": {
+    "lifestealBgUrl": "",
+    "practiceBgUrl": "",
+    "lifestealIconType": "default",
+    "lifestealIconValue": "",
+    "practiceIconType": "default",
+    "practiceIconValue": ""
+  }
+}
